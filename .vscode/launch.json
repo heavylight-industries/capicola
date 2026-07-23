@@ -1,0 +1,59 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug SRAM (SWD load, no bootloader)",
+      "type": "cortex-debug",
+      "request": "launch",
+      "servertype": "openocd",
+      "interface": "swd",
+      "device": "STM32H750IBKx",
+      "cwd": "${workspaceFolder}",
+      "executable": "${workspaceFolder}/build-arm-debug/capicola.elf",
+      "preLaunchTask": "build-debug",
+      "configFiles": [
+        "interface/stlink.cfg",
+        "target/stm32h7x.cfg"
+      ],
+      "gdbPath": "/usr/share/gcc-arm-none-eabi-10-2020-q4-major/bin/arm-none-eabi-gdb",
+      "svdFile": "${workspaceFolder}/.vscode/STM32H750x.svd",
+      "showDevDebugOutput": "raw",
+      "runToEntryPoint": "main",
+      "//": "SRAM image (no bootloader): reset boots the chip from flash, so we halt, write the program into SRAM, then load SP/PC from the SRAM vector table (0x24000000) to jump into our image. The firmware then self-installs SCB->VTOR = 0x24000000 in SystemInit (enabled by the VECT_TAB_SRAM define on the arm-debug build in CMakeLists.txt) so SysTick/audio IRQs vector to OUR SRAM handlers — without VECT_TAB_SRAM, SystemInit would point VTOR at the bootloader's flash table and interrupts misroute, which breaks stepping. The H750 will not auto-boot this image after a power cycle — expected for a debug session.",
+      "//dbgmcu": "DBGMCU_CR (0x5C001004) |= 0x7 keeps the D1 debug clock alive through SLEEP/STOP/STANDBY so halting in the audio DMA ISR (and the main loop's System::Delay idle) doesn't wedge the SWD link — without this, a long pause at a breakpoint leaves the part unrecoverable on continue and forces a probe power-cycle.",
+      "overrideLaunchCommands": [
+        "monitor reset halt",
+        "monitor mww 0x5C001004 0x00000007",
+        "load",
+        "set $sp = *(unsigned int*)0x24000000",
+        "set $pc = *(unsigned int*)0x24000004"
+      ],
+      "//restart": "Restart must do a full relaunch: reset+halt resets the audio/SAI/DMA peripherals and clocks, and 'load' rewrites a clean SRAM image (.data/.bss back to init values). Just re-pointing SP/PC into a dirtied, still-running image hangs in peripheral re-init — that was the regression.",
+      "overrideRestartCommands": [
+        "monitor reset halt",
+        "monitor mww 0x5C001004 0x00000007",
+        "load",
+        "set $sp = *(unsigned int*)0x24000000",
+        "set $pc = *(unsigned int*)0x24000004"
+      ]
+    },
+    {
+      "name": "Attach (bootloader-launched app)",
+      "type": "cortex-debug",
+      "request": "attach",
+      "servertype": "openocd",
+      "interface": "swd",
+      "device": "STM32H750IBKx",
+      "cwd": "${workspaceFolder}",
+      "//": "DFU-flash the deploy build, let the bootloader launch it, then attach to inspect/step the running SRAM app. Symbols come from the deploy ELF; no program is written.",
+      "executable": "${workspaceFolder}/build-arm/capicola.elf",
+      "configFiles": [
+        "interface/stlink.cfg",
+        "target/stm32h7x.cfg"
+      ],
+      "gdbPath": "/usr/share/gcc-arm-none-eabi-10-2020-q4-major/bin/arm-none-eabi-gdb",
+      "svdFile": "${workspaceFolder}/.vscode/STM32H750x.svd",
+      "showDevDebugOutput": "raw"
+    }
+  ]
+}

@@ -1,0 +1,3 @@
+[submodule "lib/alchemy-sdk"]
+	path = lib/alchemy-sdk
+	url = https://github.com/hermetic-modular/alchemy-sdk.git

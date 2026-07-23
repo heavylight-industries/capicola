@@ -1,0 +1,33 @@
+{
+    "configurations": [
+        {
+            "cStandard": "c11",
+            "compilerPath": "/usr/bin/arm-none-eabi-g++",
+            "cppStandard": "c++17",
+            "defines": [
+                "STM32H750xx",
+                "USE_HAL_DRIVER",
+                "CORE_CM7",
+                "BOOT_APP",
+                "ALCHEMY_BOARD_V2"
+            ],
+            "includePath": [
+                "${workspaceFolder}/**",
+                "${workspaceFolder}/src",
+                "${workspaceFolder}/src/hal",
+                "${workspaceFolder}/src/audio",
+                "${workspaceFolder}/src/control",
+                "${workspaceFolder}/src/ui",
+                "${workspaceFolder}/src/ui/anim",
+                "${workspaceFolder}/lib",
+                "${workspaceFolder}/lib/alchemy-sdk/hardware/alchemy-lab/v2/include",
+                "${workspaceFolder}/lib/alchemy-sdk/hardware/include",
+                "${workspaceFolder}/lib/alchemy-sdk/framework/include",
+                "${workspaceFolder}/lib/alchemy-sdk/vendor/libDaisy/src",
+                "/usr/share/gcc-arm-none-eabi-10-2020-q4-major/arm-none-eabi/include/**"
+            ],
+            "name": "Linux"
+        }
+    ],
+    "version": 4
+}

@@ -1,0 +1,33 @@
+{
+    "version": 3,
+    "cmakeMinimumRequired": { "major": 3, "minor": 21, "patch": 0 },
+    "configurePresets": [
+        {
+            "name": "arm",
+            "displayName": "Alchemy Lab V2 — deploy (DFU / bootloader)",
+            "description": "BOOT_APP image flashed via DFU; launched by the bootloader.",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build-arm",
+            "toolchainFile": "${sourceDir}/lib/alchemy-sdk/cmake/toolchains/stm32h750xx.cmake",
+            "cacheVariables": {
+                "ALCHEMY_BOARD": "v2",
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+        {
+            "name": "arm-debug",
+            "displayName": "Alchemy Lab V2 — SWD/SRAM debug (no bootloader)",
+            "description": "Self-initialising SRAM image (-Og -g3); loaded into SRAM by the probe for step debugging.",
+            "inherits": "arm",
+            "binaryDir": "${sourceDir}/build-arm-debug",
+            "cacheVariables": {
+                "ALCHEMY_DEBUG_SRAM": "ON",
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        }
+    ],
+    "buildPresets": [
+        { "name": "arm",       "configurePreset": "arm" },
+        { "name": "arm-debug", "configurePreset": "arm-debug" }
+    ]
+}
