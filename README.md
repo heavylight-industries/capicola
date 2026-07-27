@@ -1,17 +1,17 @@
 # Capicola
+Real-time time stretcher, pitch shifter, transient detector, and envelope follower module built on the Hermetic Modular Alchemy Lab platform. This is the hardware embodiment of my independently authored, peer reviewed DAFx26 paper titled "Keyframe Time Stretching via Extrema Sampling". 
 
-Auto-slicer / keyframe time-stretch module for the **Alchemy Lab V2** board
-(STM32H750, 64 MB SDRAM, 48 kHz / 64-sample blocks), built on the
-[alchemy-sdk](https://github.com/hermetic-modular/alchemy-sdk).
+The core idea of the module is this: Incoming stereo audio gets stretched out, and in parallel its envelope and transients are extracted. When a transient passes the threshold, it causes the lagging read head to snap to the current time with a short crossfade while continuing to stretch from the new position. This provides a means of time stretching while staying true to the rhythm of the input. The block diagram is shown below.
 
-Two independent channels each run live capture → B-spline keyframe
-sparsifier → granular playback, splicing onto fresh material on every
-detected transient ("Keyframe Time Stretching via Extrema Sampling",
-DAFx26). Pitch and stretch are decoupled; the stretch grid re-anchors on
-triggers so tails ring out under the incoming rhythm.
+*INSERT BLOCK DIAGRAM HERE*
 
-**Panel reference: [MANUAL.md](MANUAL.md)** — pages, buttons, shift
-functions, jack map, fixed internals.
+The input and output envelope followers and their transients don't just live internal to the module. They're always accessible on the CV outputs of the module to trigger and modulate external devices. And, each of the performance controls is normalized to the envelope followers, enabling the dynamics of the signal to modulate the controls in real time, leading to some bizarre and creative self patching that's clearly visualized by the LED rings and can be as subtle or extreme as desired. 
+
+KeyframeRecorder.h is the core method as described in the paper, and is set up for offline recording and playback use in contexts other than the Alchemy Lab. Additionally, lib contains several header files that are useful in their own right, namely:
+- An implementation of Vadim Zavalashin's "Zero Delay Feedback" filters (1-pole, state variable, and 4 pole ladder)
+- "Deluxe" delay lines that offers not just Hermite or B-Spline interpolated reads from a ring buffer, but also high quality first and second derivatives along with the Teager-Kaiser Energy Operator (TKEO).
+- Tabulated function storage and recall for convenient low cost tanh(), sin(), and so on.
+- A TKEO driven peak detector with adaptive thresholding
 
 ## Layout
 
