@@ -16,16 +16,19 @@ functions, jack map, fixed internals.
 ## Layout
 
 - `src/main.cpp` — the entire UI: `VirtualKnob` declarations carry all
-  knob→unit mappings, composed into three `Page`s on a `Pager`; mod
-  routing (`ModRouter`), CV IO, LED layers and presets all live here.
+  knob→unit mappings, composed into two page groups (B1: perf/depth on a
+  `Pager`; B3: routing/secondary, hand-rolled); mod routing (`ModRouter`),
+  CV IO, LED layers and presets all live here.
 - `src/audio/` — `AudioEngine`: owns the two per-channel
   `KeyframeRecorder` chains, filtered feedback, dry/wet mix, and the
   output-side follower. Setters take engineering units.
 - `lib/` — the DSP (`KeyframeRecorder` / `Analyzer` / `SparseLine` /
-  `Granule` / `Detector`). Header-only.
+  `Granule` / `Detector`) plus the tabulated waveshapers
+  (`Shapers` / `TabulatedFunction` / `Tabulator` / functors). Header-only.
+  The waveshaper is applied to keyframes before interpolation, so drive
+  cannot alias.
 - `lib/alchemy-sdk/` — the SDK (submodule); vendors libDaisy under
   `lib/alchemy-sdk/vendor/libDaisy`.
-- `patches/` — snapshots of local submodule drift (see below).
 
 ## Build
 
@@ -40,6 +43,10 @@ cmake --build --preset arm
 
 Outputs `build-arm/capicola.{elf,bin,hex}`.
 
+The `arm-bench` preset builds the same image with a 1 Hz CPU/CV serial log
+on the front USB instead of HostLink (they share the CDC port) into
+`build-arm-bench/`.
+
 ## Flash (Daisy bootloader / front USB-C)
 
 Put the module in update mode (hold **B3** through the ~2 s boot window, or
@@ -50,27 +57,6 @@ cmake --build --preset arm --target capicola-flash
 ```
 
 `...-size` prints the memory footprint.
-
-## Debug
-
-`cmake --preset arm-debug` builds a SWD/SRAM image (`-Og -g3`, no
-bootloader) that the probe loads straight into SRAM — F5 with the
-cortex-debug config in `.vscode/launch.json`. The defines it needs
-(`DAISY_FORCE_FULL_INIT`, `VECT_TAB_SRAM`) come from the root
-`CMakeLists.txt`, but the force-full-init *handling* is a local patch to
-the vendored libDaisy (see below) — the debug image dies in pre-main
-without it.
-
-## Submodule drift — do not `git submodule update` casually
-
-`lib/alchemy-sdk`'s vendored libDaisy carries one local uncommitted patch,
-snapshotted in `patches/`:
-
-- `vendor/libDaisy/src/daisy_seed.cpp` — `DAISY_FORCE_FULL_INIT` (full
-  clock + SDRAM bring-up for the SWD/SRAM debug image).
-
-A recursive `git submodule update` destroys it — reapply from `patches/`
-if that happens.
 
 ## License
 

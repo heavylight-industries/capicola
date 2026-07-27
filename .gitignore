@@ -1,5 +1,6 @@
 build
 build-arm
+build-arm-bench
 build-arm-debug
 mx.scratch
 !.settings
