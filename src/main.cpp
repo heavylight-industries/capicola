@@ -5,33 +5,37 @@
  * Perf-page knobs (ranges are the spec; the map lives in the VirtualKnob decls):
  *
  *   P1 Pitch      ±12 semitones (unity at noon; ±0.2 st detent snaps to true 0)
- *   P2 Stretch    1.0 (realtime) .. 0.01 (deep)
+ *   P2 Stretch    1.0 (realtime) .. 0 (frozen), (1-x)^2.5 taper
  *   P3 Threshold  keep ratio 0..8 over the envelope average (90% = 4, top = mute)
  *   P4 Grain Size 32 .. 4096 keyframes
  *   P5 Quality    analyzer ε 0.1 (crunchy) .. 0.001 (max)
- *   P6 Feedback   0 .. 2.0 — wet → tanh → SVF HP+BP mix → back into the recorder
+ *   P6 Feedback   0 .. 1.5 — wet → sinc sat → SVF bandpass → back into the recorder
  *
- * Buttons (panel-final): B1 = PAGE, B2 = SLICE, B3 = SHIFT.
+ * Buttons (panel-final): B1 = PAGE, B2 = SLICE, B3 = PAGE.
  *
- * Pages (B1 cycles): perf (orange) → mod depth (pink). All three buttons wear
- * the active page's hue; activity flashes the LED OFF (B2 on a trigger, B3
- * while shift is armed).
- *   Depth view: pot i = bipolar depth (−1..+1) for pot i's modulation.
+ * Two page groups, each rotated by a single press of its own button and each
+ * remembering where it was left. All three buttons wear the visible page's hue;
+ * B2 flashes OFF on a trigger.
  *
- * Mod ROUTING is not on the page cycle: double-tap B3 to enter (buttons wear
- * blue), single-tap to exit. Pot i = 3-zone source selector — input follower
- * (blue) / output follower (orange) / CV IN (violet), with zone-granular
- * catch. Stored in presets via RoutingStore.
+ *   B1  perf (orange) → mod depth (pink)
+ *   B3  CV routing (blue) → secondary settings (teal)
  *
- * B3 = SHIFT (armed after a ~0.2 s hold, so taps stay free for the routing
- * gesture). Perf page: P1 nudges pitch in exact integer semitones; P3..P6 swap
- * to a secondary parameter with its own pot-catch (envelope smoothing, dyadic
- * grain step, MIX dry/wet, feedback cutoff — P2 is currently free). Secondaries
- * are session-only. Depth page: hold + turn any pot resets its mod depth to 0.
+ * Pressing the other group's button jumps to that group's remembered page; the
+ * next press of the same button advances within the group.
  *
- * Chords: B1+B2 held 1.5 s saves everything as the boot state (QSPI slot 0).
- * B1+B3 held 0.5 s resets the CURRENT view (routing, if it's open) to factory
- * defaults. Both confirm with a triple dark blink.
+ *   Depth:     pot i = bipolar depth (−1..+1) for pot i's modulation.
+ *   Routing:   pot i = 3-zone source selector — input follower (orange) / output
+ *              follower (blue, default) / CV IN (violet), zone-granular catch.
+ *   Secondary: envelope smoothing, fade time, keyframe drive, drive
+ *              character, MIX dry/wet, feedback bandpass — each with its own
+ *              pot-catch.
+ *
+ * Routing zones and secondary norms both ride the preset store.
+ *
+ * B2 held 1.5 s saves everything as the boot state (QSPI slot 0); the press
+ * still slices. B1+B3 held 0.5 s resets the CURRENT view to factory defaults
+ * (stored values only — the save is untouched). Both confirm with a triple
+ * dark blink.
  *
  * Panel jacks (2×5, panel-final names, code indices in parens):
  *   INL   TRIG IN (cv[0])   TRIG 1·in-gate (jacks[2])   TRIG 2·out-gate (jacks[4])   OUTL
@@ -41,12 +45,13 @@
  * monostables (~20 ms), 0/5 V; envelopes are 0..1 → 0..5 V. Same physical
  * channels as the old CV1..CV6 map — only the roles/names changed.
  *
- * Fade (= latency = retrigger floor, ~20 ms) is a fixed engine internal.
+ * Fade (= latency = retrigger floor) is the secondary page's P2, boot 20 ms.
  * The SDK's ControlLoop owns polling, pot-catch (Pager), CV dispatch, and ring
  * rendering (each knob's declarative Ring).
  */
 
 #include "alchemy/control/pot_catch.h"       /* PotState, InitCatch, UpdateCatch */
+#include "alchemy/led/anims/fill.h"
 #include "alchemy/host_link/host.h"
 #include "alchemy/hw/alchemy_lab_v2.h"
 #include "alchemy/surface/control_loop.h"
@@ -70,20 +75,28 @@ using SerialLog = daisy::Logger<daisy::LOGGER_EXTERNAL>;
 
 /* ── Palette ─────────────────────────────────────────────────────────── */
 
-static constexpr LedPanel::Rgb kBlue   = {30, 110, 255};   // perf page / in-follower
+static constexpr LedPanel::Rgb kBlue   = {30, 110, 255};   // routing page / out-follower
 static constexpr LedPanel::Rgb kIce    = {150, 210, 255};  // perf bipolar negative
-static constexpr LedPanel::Rgb kOrange = {255, 110, 15};   // depth negative / out-follower
+static constexpr LedPanel::Rgb kOrange = {255, 110, 15};   // perf page / in-follower
 static constexpr LedPanel::Rgb kViolet = {160, 40, 255};   // depth positive / ext CV
 static constexpr LedPanel::Rgb kCenter = {90, 90, 90};     // bipolar zero
 static constexpr LedPanel::Rgb kWhite  = {255, 255, 255};
 static constexpr LedPanel::Rgb kPink   = {255, 60, 150};   // depth page / positive depth
+static constexpr LedPanel::Rgb kTeal   = {0, 220, 200};    // secondary page
 
-/* Mode color: worn by all three buttons and the page-advance indicator, one hue
- * per page. Button activity flashes OFF (legible over any base hue). The
- * routing view (B3 double-tap, not a pager page) wears kBlue. */
+/* Mode color: worn by all three buttons, one hue per page. Activity flashes OFF.
+ * B1 pages are warm, B3 pages cool. */
 static constexpr LedPanel::Rgb kPageButton[2] = {
-    kOrange,           // page 0 — perf
-    kPink,             // page 1 — depth
+    kOrange,           // B1 page 0 — perf
+    kPink,             // B1 page 1 — depth
+};
+
+static constexpr uint8_t kB3Routing   = 0;
+static constexpr uint8_t kB3Secondary = 1;
+
+static constexpr LedPanel::Rgb kB3PageButton[2] = {
+    kBlue,             // B3 page 0 — CV routing
+    kTeal,             // B3 page 1 — secondary settings
 };
 
 /* CV out levels. */
@@ -143,8 +156,17 @@ static VirtualKnob pitch = VirtualKnob(0, "Pitch")
     .Ring(Bipolar(kOrange, kBlue, kCenter));   // up = orange (page hue), down = blue
 
 static VirtualKnob stretch = VirtualKnob(1, "Stretch")
-    .Linear(1.0f, 0.01f)
+    .Linear(0.0f, 1.0f)
     .Ring(Level(kOrange));
+
+/* Stretch taper: 1.0 (realtime) → 0 (frozen) at the CW stop. Linear gave 2x at
+ * noon and dumped all the range into the last few percent; exp was too steep at
+ * the top. (1-n)^2.5 lands ~5.7x at noon and reaches a true freeze. */
+static float StretchCurve(float n)
+{
+    if (n < 0.0f) n = 0.0f; else if (n > 1.0f) n = 1.0f;
+    return std::pow(1.0f - n, 2.5f);
+}
 
 static VirtualKnob threshold = VirtualKnob(2, "Threshold")
     .Linear(0.0f, 1.0f)
@@ -159,7 +181,7 @@ static VirtualKnob quality = VirtualKnob(4, "Quality")
     .Ring(Level(kOrange));
 
 static VirtualKnob feedback = VirtualKnob(5, "Feedback")
-    .Linear(0.f, 2.0f)
+    .Linear(0.f, 1.5f)
     .Ring(Level(kOrange, FillAnim::Pulse));
 
 /* ── Page 1 — mod depth view (B2) ────────────────────────────────────── */
@@ -200,7 +222,7 @@ static VirtualKnob cvDepth6 = VirtualKnob(5, "P6 Depth")
  * and re-locks the moment it sits inside its stored zone. */
 
 static constexpr uint8_t kNumSrcZones = 3;
-static constexpr LedPanel::Rgb kSrcColors[kNumSrcZones] = {kBlue, kOrange,
+static constexpr LedPanel::Rgb kSrcColors[kNumSrcZones] = {kOrange, kBlue,
                                                            kViolet};
 
 static int ZoneOf(float v)
@@ -214,7 +236,7 @@ static int ZoneOf(float v)
 class RoutingStore : public Serializable
 {
   public:
-    uint8_t zone[NUM_POTS] = {};   // 0 = input follower (factory default)
+    uint8_t zone[NUM_POTS] = {1, 1, 1, 1, 1, 1};   // 1 = output follower (factory default)
 
     size_t SerializedSize() const override { return NUM_POTS; }
     void   Serialize(uint8_t* out) const override
@@ -236,14 +258,24 @@ class RoutingStore : public Serializable
 };
 
 static RoutingStore routing;
-static bool         routingActive = false;
 static bool         routeCaught[NUM_POTS] = {};
+
+/* B3 page group: latched, remembers its page independently of B1. */
+static bool    b3Active = false;
+static uint8_t b3Page   = kB3Routing;
+
+/* B1 page held frozen while a B3 page is up. */
+static uint8_t underPage = 0;
+static float   underNorm[NUM_POTS] = {};
+
+static inline bool RoutingOpen()   { return b3Active && b3Page == kB3Routing; }
+static inline bool SecondaryOpen() { return b3Active && b3Page == kB3Secondary; }
 
 static void DrawRouteRing(uint8_t pot, uint8_t sel)
 {
     /* Orange gets a higher dim floor: its low G/B channels quantize away and it
      * reads dimmer than its neighbors at equal scale. */
-    static constexpr float kZoneDim[3] = {0.06f, 0.12f, 0.06f};
+    static constexpr float kZoneDim[3] = {0.12f, 0.06f, 0.06f};
     for (int s = 0; s <= 12; s++)
     {
         const int   zone = (s < 4) ? 0 : (s < 9) ? 1 : 2;   // 4|5|4 LEDs
@@ -272,55 +304,47 @@ static Presets presets(hw.seed.qspi);
 /* Browser/CLI preset editor over the front-panel USB CDC (SDK default
  * transport). Identity strings are literals — kept by reference. */
 static hostlink::Host host(presets, "capicola", "Capicola",
-                           "0.2.0", CAPICOLA_GIT_HASH);
+                           "0.3.0", CAPICOLA_GIT_HASH);
 #endif
 
 static constexpr uint32_t kSaveHoldMs  = 1500;
 static constexpr uint32_t kResetHoldMs = 500;    // B1+B3: reset current page
-static constexpr uint32_t kSaveFlashMs = 400;
+static constexpr uint32_t kSaveFlashMs  = 600;   // 3 dark pulses at kSaveBlinkMs
+static constexpr uint32_t kSaveBlinkMs  = 100;
 static uint32_t saveFlashMs = 0;   // 0 = never; set on save/reset commit
 
 /* Factory defaults (stored norms) — seeded at boot AND restored per-page by the
  * B1+B3 hold. One table so the two can never drift apart. (Routing defaults
  * are RoutingStore's zero-init: all input follower.) */
 static constexpr float kPageDefaults[2][NUM_POTS] = {
-    /* perf:  pitch unity, stretch ~half-speed, threshold mid, grain, mix full
-     * wet, feedback off. */
+    /* perf: pitch unity, stretch ~6x, threshold mid, grain, quality max,
+     * feedback off. */
     {0.5f, 0.5f, 0.5f, 0.3f, 1.0f, 0.0f},
     /* depths: noon = off */
     {0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f},
 };
 
-/* ── Shift-secondary layer (perf page, B3 held) ──────────────────────────
- * P3..P6 swap to a second parameter with its own pot-catch (P1 keeps the
- * semitone stepper; P2 is free since Quality moved to the base layer). Every
- * default equals the engine's boot value, so entering shift shows the live
- * setting under the catch pip. Uncaught until the pot sweeps through the
- * default; on release the primary is restored (uncaught, so it re-catches).
- * Secondaries are session-only (not written to the preset).
- *
- *   P2  —          free
- *   P3  Smoothing  finder fc    Exp 4e-4..0.5                      default 0.0014
- *   P4  Grain step keyframes    dyadic 32,64,…,4096 (8 steps)      default 128
+/* ── Secondary settings (B3 page 1) ──────────────────────────────────────
+ *   P1  Smoothing  envelope fc  Exp 5e-5..0.125                    default 0.0014
+ *   P2  Fade       OLA crossfade  Exp 10..250 ms                   default 20 ms
+ *   P3  Drive      keyframe shaper gain   Linear 0.5..4.0         default 1.0
+ *   P4  Character  quake ← clean → sinc   Linear 0..1             default 1 (sinc)
  *   P5  Mix        dry/wet      Linear 0..1                        default 1 (wet)
- *   P6  FB cutoff  feedback fc  Exp 2e-3..0.9                      default 0.02
+ *   P6  FB band    feedback bandpass fc   Exp 2e-3..0.9           default 0.02
  */
-static PotState secState[NUM_POTS];        // [2..5] = P3..P6 catch state
-static float    secPrimNorm[NUM_POTS];     // primary stored, snapshot at shift entry
-static bool     secActive = false;         // a perf-page shift session is live
+static PotState secState[NUM_POTS];
 
-/* Which pots carry a secondary (P1 = stepper, P2 = free). */
-static constexpr bool kSecEnabled[NUM_POTS] = {false, false, true,
-                                               true,  true,  true};
+static constexpr bool kSecEnabled[NUM_POTS] = {true, true, true,
+                                               true, true, true};
 
 /* Default secondary norms (each engine boot value expressed on its sweep). */
 static constexpr float kSecDefault[NUM_POTS] = {
-    0.5f,      // P1 — unused (semitone stepper)
-    0.5f,      // P2 — free
-    0.1757f,   // P3 smoothing → fc 0.0014
-    0.30f,     // P4 grain     → 128 keyframes (dyadic step 2)
+    0.4259f,   // P1 smoothing → fc 0.0014
+    0.2153f,   // P2 fade      → 960 samples (20 ms)
+    0.1429f,   // P3 drive     → 1.0
+    1.0f,      // P4 character → full sinc
     1.0f,      // P5 mix       → full wet (classic Capicola)
-    0.3769f,   // P6 fb cutoff → fc 0.02
+    0.3769f,   // P6 fb band   → fc 0.02
 };
 
 /* Secondary engineering value from a caught norm. */
@@ -328,11 +352,12 @@ static float SecValue(uint8_t pot, float n)
 {
     switch (pot)
     {
-        case 2: return 4.0e-4f * std::pow(0.5f / 4.0e-4f, n);       // smoothing fc (Exp)
-        case 3: { int i = (int)(n * 8.0f); if (i > 7) i = 7; if (i < 0) i = 0;
-                  return (float)(32 << i); }                        // grain dyadic
-        case 4: return n;                                           // mix (Linear)
-        case 5: return 2.0e-3f * std::pow(0.9f / 2.0e-3f, n);       // fb cutoff fc (Exp)
+        case 0: return 5.0e-5f * std::pow(0.125f / 5.0e-5f, n);  // smoothing fc (Exp)
+        case 1: return 480.0f * std::pow(12000.0f / 480.0f, n);  // fade samples (Exp)
+        case 2: return 0.5f + 3.5f * n;                          // drive (Linear)
+        case 3: return n;                                       // character (Linear)
+        case 4: return n;                                       // mix (Linear)
+        case 5: return 2.0e-3f * std::pow(0.9f / 2.0e-3f, n);   // fb band fc (Exp)
         default: return 0.0f;
     }
 }
@@ -342,26 +367,76 @@ static void SecApply(uint8_t pot, float v)
 {
     switch (pot)
     {
-        case 2: engine.SetTkeoCutoff(v);     break;
-        case 3: engine.SetGrainSize(v);      break;
+        case 0: engine.SetTkeoCutoff(v);     break;
+        case 1: engine.SetFade(v);           break;
+        case 2: engine.SetDrive(v);          break;
+        case 3: engine.SetDriveCharacter(v); break;
         case 4: engine.SetMix(v);            break;
         case 5: engine.SetFeedbackCutoff(v); break;
         default: break;
     }
 }
 
-/* Secondary ring: an orange level arc (dim while uncaught) plus a bright catch
- * pip at the stored default. */
-static void DrawShiftArc(uint8_t pot, float level, bool caught)
+/* Secondary norms ride the preset store. */
+class SecondaryStore : public Serializable
 {
-    const LedPanel::Rgb on  = hw.leds.ScaleGlobal(LedPanel::Scale(kOrange, caught ? 0.9f : 0.4f));
-    const LedPanel::Rgb off = hw.leds.ScaleGlobal(LedPanel::Scale(kOrange, 0.04f));
-    const int lit = (int)(level * 12.0f + 0.5f);
-    for (int s = 0; s <= 12; s++)
-        hw.leds.SetRingByHour(pot, 7.5f + 0.75f * (float)s, (s <= lit) ? on : off);
+  public:
+    size_t SerializedSize() const override { return NUM_POTS * 2; }   // uint16 each
+    void   Serialize(uint8_t* out) const override
+    {
+        for (uint8_t p = 0; p < NUM_POTS; p++)
+        {
+            float n = secState[p].stored;
+            if (n < 0.0f) n = 0.0f; else if (n > 1.0f) n = 1.0f;
+            const uint16_t q = (uint16_t)(n * 65535.0f + 0.5f);
+            out[p * 2]     = (uint8_t)(q & 0xFF);
+            out[p * 2 + 1] = (uint8_t)(q >> 8);
+        }
+    }
+    bool Deserialize(const uint8_t* in) override
+    {
+        for (uint8_t p = 0; p < NUM_POTS; p++)
+        {
+            const uint16_t q = (uint16_t)in[p * 2]
+                             | (uint16_t)((uint16_t)in[p * 2 + 1] << 8);
+            secState[p].stored = (float)q / 65535.0f;
+        }
+        return true;
+    }
+    uint32_t SchemaHash() const override
+    {
+        return 0x53454335u ^ (uint32_t)NUM_POTS;
+    }
+};
+
+static SecondaryStore secondary;
+
+/* Secondary ring: a level arc (dim while uncaught) plus a bright catch pip. */
+static void DrawShiftArc(uint8_t pot, float level, bool caught, uint32_t t_ms)
+{
+    FillDesc d;
+    d.mode          = FillMode::Edge;
+    d.color         = LedPanel::Scale(kTeal, caught ? 0.9f : 0.4f);
+    d.passive_color = LedPanel::Scale(kTeal, 0.04f);
+    DrawFill(hw.leds, pot, 7.5f, 0.75f, 13, level, d, t_ms);
     if (!caught)
-        hw.leds.SetRingByHour(pot, 7.5f + 0.75f * (float)lit,
-            hw.leds.ScaleGlobal(LedPanel::Mix(kOrange, kWhite, 0.7f)));
+        hw.leds.SetRingByHour(pot, 7.5f + 9.0f * level,
+            hw.leds.ScaleGlobal(LedPanel::Mix(kTeal, kWhite, 0.7f)));
+}
+
+/* Every ring on the secondary page, so it reads the same over either B1 page.
+ * Unwired pots sit dark. */
+static void DrawSecondaryRings(uint32_t t_ms)
+{
+    const LedPanel::Rgb off = hw.leds.ScaleGlobal(LedPanel::Scale(kTeal, 0.04f));
+    for (uint8_t p = 0; p < NUM_POTS; p++)
+    {
+        if (kSecEnabled[p])
+            DrawShiftArc(p, secState[p].stored, secState[p].caught, t_ms);
+        else
+            for (int s = 0; s <= 12; s++)
+                hw.leds.SetRingByHour(p, 7.5f + 0.75f * (float)s, off);
+    }
 }
 
 /* ── Frame hooks ─────────────────────────────────────────────────────── */
@@ -369,91 +444,59 @@ static void DrawShiftArc(uint8_t pot, float level, bool caught)
 /* B3 press bookkeeping (written by OnPoll at 1 ms cadence, read by OnFrame /
  * OnRender). SHIFT arms only after a hold — clean taps belong to the routing
  * view gesture (double-tap in, single-tap out). */
-static constexpr uint32_t kShiftArmMs  = 200;   // hold this long to arm shift
-static constexpr uint32_t kTapMaxMs    = 250;   // release under this = a tap
-static constexpr uint32_t kDoubleGapMs = 350;   // max gap between the two taps
-static uint32_t b3DownMs   = 0;      // press timestamp (0 = not down)
-static bool     b3Chorded  = false;  // B1 joined while down → chord, not a tap
-static bool     shiftArmed = false;  // held past kShiftArmMs, B1-free
+static bool b1Chorded = false;   // another button joined while down → not a page press
+static bool b3Chorded = false;
 
 /* Knob values → engine, routing zones → mod sources. */
 static void OnFrame()
 {
-    /* B3 = SHIFT, page-local meanings:
-     *   perf + P1:     pitch steps in exact integer semitones (SetStored).
-     *   perf + P2..P6: the shift-secondary layer (see the block above).
-     *   depth + pot:   turning past kClearMove resets that pot's mod depth to 0. */
+    /* B3 view changes: arm the incoming page's catch, re-arm B1's on the way out. */
     {
-        constexpr float kSemiStep  = 1.0f / 24.0f;   // pot travel per semitone
-        constexpr float kClearMove = 0.01f;          // travel that counts as a turn
-        static bool  shiftPrev = false;
-        static float shiftAnchor[NUM_POTS] = {};
-        /* Shift = B3 armed (held past kShiftArmMs, no B1 — B1+B3 is the reset
-         * chord) and never while the routing view is open. */
-        const bool    shift = shiftArmed && !routingActive;
-        const uint8_t pg    = pager.Page();
-        const float*  ph    = loop.Phys();
+        static bool    prevActive = false;
+        static uint8_t prevPage   = kB3Routing;
+        const float*   ph         = loop.Phys();
 
-        const auto SnapPitch = [&](int semis) {
-            if (semis > 12) semis = 12; else if (semis < -12) semis = -12;
-            pager.SetStored(0, 0, ((float)semis + 12.0f) / 24.0f, ph);
-        };
+        /* Pager::Update runs before this hook and tracks the caught pot, so the
+         * B1 page underneath follows the knob unless we hold it. Snapshot on
+         * entry, re-assert every frame; the pot locks out once it moves past
+         * kCatchTolerance. */
+        if (b3Active && !prevActive)
+        {
+            underPage = pager.Page();
+            for (uint8_t p = 0; p < NUM_POTS; p++)
+                underNorm[p] = pager.Stored(underPage, p);
+        }
+        if (b3Active)
+            for (uint8_t p = 0; p < NUM_POTS; p++)
+                if (pager.Stored(underPage, p) != underNorm[p])
+                    pager.SetStored(underPage, p, underNorm[p], ph);
 
-        if (shift && !shiftPrev)                    // ── shift pressed ──
+        if (b3Active != prevActive || (b3Active && b3Page != prevPage))
+        {
+            if (RoutingOpen())
+                for (uint8_t p = 0; p < NUM_POTS; p++)
+                    routeCaught[p] = false;
+            else if (SecondaryOpen())
+            {
+                for (uint8_t p = 0; p < NUM_POTS; p++)
+                    if (kSecEnabled[p]) InitCatch(secState[p], ph[p]);
+            }
+            else
+                pager.LockPage(pager.Page(), ph);
+        }
+
+        if (SecondaryOpen())
         {
             for (uint8_t p = 0; p < NUM_POTS; p++)
-                shiftAnchor[p] = ph[p];
-            if (pg == 0)
             {
-                SnapPitch((int)std::lround(pitch.Value()));
-                for (uint8_t p = 1; p < 6; p++)      // P2..P6 → arm secondary catch
-                {
-                    secPrimNorm[p] = pager.Stored(0, p);   // remember the primary
-                    if (kSecEnabled[p])
-                        InitCatch(secState[p], ph[p]);
-                }
-                secActive = true;
+                if (!kSecEnabled[p]) continue;
+                UpdateCatch(secState[p], ph[p]);
+                SecApply(p, SecValue(p, secState[p].stored));
             }
         }
-        else if (shift && shiftPrev)                // ── shift held ──
-        {
-            if (pg == 0)
-            {
-                const float d = ph[0] - shiftAnchor[0];   // P1 semitone stepper
-                if (d > kSemiStep || d < -kSemiStep)
-                {
-                    SnapPitch((int)std::lround(pitch.Value()) + ((d > 0) ? 1 : -1));
-                    shiftAnchor[0] = ph[0];
-                }
-                for (uint8_t p = 1; p < 6; p++)            // P3..P6 secondaries
-                {
-                    if (!kSecEnabled[p]) continue;
-                    UpdateCatch(secState[p], ph[p]);
-                    SecApply(p, SecValue(p, secState[p].stored));
-                }
-            }
-            else if (pg == 1)
-            {
-                for (uint8_t p = 0; p < NUM_POTS; p++)     // depth clear (all six)
-                {
-                    const float d = ph[p] - shiftAnchor[p];
-                    if (d > kClearMove || d < -kClearMove)
-                    {
-                        pager.SetStored(1, p, 0.5f, ph);   // depth zero = noon
-                        shiftAnchor[p] = ph[p];
-                    }
-                }
-            }
-        }
-        else if (!shift && shiftPrev && secActive) // ── shift released ──
-        {
-            /* Restore the P2..P6 primaries the Pager tracked away while dialing
-             * secondaries; SetStored re-arms catch, so nothing jumps. */
-            for (uint8_t p = 1; p < 6; p++)
-                pager.SetStored(0, p, secPrimNorm[p], ph);
-            secActive = false;
-        }
-        shiftPrev = shift;
+
+        prevActive = b3Active;
+        prevPage   = b3Page;
     }
 
     /* Pitch detent: within ±0.2 st of noon the transform snaps to exactly 0 —
@@ -467,13 +510,10 @@ static void OnFrame()
         engine.SetSlicePitch(pv);
     }
 
-    /* While shift is held on the perf page, P2..P6 drive their secondaries — skip
-     * their primaries so the two layers don't fight (setters are sticky; the
-     * stored value is restored on release). */
-    const bool shiftP0 = shiftArmed && !routingActive && pager.Page() == 0;
-    if (!shiftP0)
+    /* Secondary page open: skip the primaries so the two layers don't fight. */
+    if (!SecondaryOpen())
     {
-        engine.SetSliceStretch(stretch.Value());
+        engine.SetSliceStretch(StretchCurve(stretch.Value()));
         /* P3 piecewise: 0..90% of the sweep is ratio 0..4 over the envelope
          * average, the last 10% climbs 4..8; the very top hard-mutes auto
          * triggers (sentinel trips Detector::kMuteAt). B1 still works. */
@@ -497,7 +537,7 @@ static void OnFrame()
      * a pot decouples on entry and re-locks the moment it sits inside its
      * stored zone. The pager page underneath is re-locked every frame so those
      * primaries can't catch while their pots are steering zones. */
-    if (routingActive)
+    if (RoutingOpen())
     {
         const float* ph = loop.Phys();
         for (uint8_t p = 0; p < NUM_POTS; p++)
@@ -508,7 +548,6 @@ static void OnFrame()
             if (routeCaught[p])
                 routing.zone[p] = z;
         }
-        pager.LockPage(pager.Page(), ph);
     }
 
     for (uint8_t p = 0; p < NUM_POTS; p++)
@@ -542,13 +581,11 @@ static uint32_t sliceFlashMs = 0;   // last button-originated trigger
 
 static void OnPoll(uint32_t t_ms)
 {
-    /* B1+B2 held kSaveHoldMs = save current settings as the startup defaults
-     * (slot 0). The chord claims both buttons: ConsumeButton keeps B1's release
-     * from flipping the page, the B2-pressed guard skips the slice. */
+    /* B2 held kSaveHoldMs = save current settings as the startup defaults
+     * (slot 0). The press still slices on its rising edge. */
     static uint32_t saveHoldMs = 0;
-    if (hw.buttons[0].Pressed() && hw.buttons[1].Pressed())
+    if (hw.buttons[1].Pressed())
     {
-        pager.ConsumeButton();
         if (++saveHoldMs == kSaveHoldMs)
         {
             presets.Save(0);
@@ -568,12 +605,21 @@ static void OnPoll(uint32_t t_ms)
         pager.ConsumeButton();   // B1 is the pager now — eat its release
         if (++resetHoldMs == kResetHoldMs)
         {
-            if (routingActive)
+            if (RoutingOpen())
             {
                 for (uint8_t p = 0; p < NUM_POTS; p++)
                 {
-                    routing.zone[p] = 0;
+                    routing.zone[p] = 1;       // output follower
                     routeCaught[p]  = false;   // re-catch against the new zone
+                }
+            }
+            else if (SecondaryOpen())
+            {
+                for (uint8_t p = 0; p < NUM_POTS; p++)
+                {
+                    secState[p].stored = kSecDefault[p];
+                    secState[p].caught = false;
+                    if (kSecEnabled[p]) SecApply(p, SecValue(p, secState[p].stored));
                 }
             }
             else
@@ -588,10 +634,8 @@ static void OnPoll(uint32_t t_ms)
     else
         resetHoldMs = 0;
 
-    /* B2 alone = force trigger. Suppressed while B1 or B3 is down so the chords
-     * don't fire a stray slice. */
-    if (hw.buttons[1].RisingEdge() && !hw.buttons[0].Pressed()
-        && !hw.buttons[2].Pressed())
+    /* B2 = force trigger, on every press. */
+    if (hw.buttons[1].RisingEdge())
     {
         engine.TriggerSlice();
         sliceFlashMs = t_ms;
@@ -615,55 +659,39 @@ static void OnPoll(uint32_t t_ms)
             trigArmed = true;
     }
 
-    /* B3 tap machine: clean taps drive the routing view (double-tap opens,
-     * single-tap closes); a B1-free hold past kShiftArmMs arms SHIFT. Any B1/B2
-     * involvement while down voids both — B3 is then chord material. */
+    /* B3 rotates its own page group: first press opens on the remembered page,
+     * each press after that advances. A chorded press is never a page press. */
+    if (hw.buttons[2].RisingEdge())
+        b3Chorded = hw.buttons[0].Pressed() || hw.buttons[1].Pressed();
+    if (hw.buttons[2].Pressed()
+        && (hw.buttons[0].Pressed() || hw.buttons[1].Pressed()))
+        b3Chorded = true;
+    if (hw.buttons[2].FallingEdge())
     {
-        static uint32_t b3LastTapMs = 0;
-        if (hw.buttons[2].RisingEdge())
+        if (!b3Chorded)
         {
-            b3DownMs  = t_ms;
-            b3Chorded = hw.buttons[0].Pressed() || hw.buttons[1].Pressed();
+            if (b3Active) b3Page ^= 1;
+            else          b3Active = true;
         }
-        if (b3DownMs != 0 && hw.buttons[2].Pressed())
-        {
-            if (hw.buttons[0].Pressed() || hw.buttons[1].Pressed())
-                b3Chorded = true;
-            if (!b3Chorded && !routingActive
-                && (t_ms - b3DownMs) >= kShiftArmMs)
-                shiftArmed = true;
-        }
-        if (hw.buttons[2].FallingEdge())
-        {
-            const uint32_t held = t_ms - b3DownMs;
-            if (!b3Chorded && !shiftArmed && held < kTapMaxMs)
-            {
-                if (routingActive)
-                {
-                    routingActive = false;
-                    pager.LockPage(pager.Page(), loop.Phys());   // re-arm catch
-                    b3LastTapMs   = 0;
-                }
-                else if (b3LastTapMs != 0
-                         && (t_ms - b3LastTapMs) <= kDoubleGapMs)
-                {
-                    routingActive = true;
-                    for (uint8_t p = 0; p < NUM_POTS; p++)
-                        routeCaught[p] = false;   // in-zone pots catch next frame
-                    b3LastTapMs = 0;
-                }
-                else
-                    b3LastTapMs = t_ms;
-            }
-            b3DownMs   = 0;
-            b3Chorded  = false;
-            shiftArmed = false;
-        }
+        b3Chorded = false;
     }
 
-    /* Routing view claims B1 (no page flips underneath the overlay). */
-    if (routingActive && hw.buttons[0].Pressed())
-        pager.ConsumeButton();
+    /* B1 while a B3 page is up returns to B1's remembered page instead of
+     * advancing it — the pager never sees the release. */
+    if (hw.buttons[0].RisingEdge())
+        b1Chorded = hw.buttons[1].Pressed() || hw.buttons[2].Pressed();
+    if (hw.buttons[0].Pressed())
+    {
+        if (hw.buttons[1].Pressed() || hw.buttons[2].Pressed())
+            b1Chorded = true;
+        if (b3Active)
+            pager.ConsumeButton();
+    }
+    if (hw.buttons[0].FallingEdge())
+    {
+        if (b3Active && !b1Chorded) b3Active = false;
+        b1Chorded = false;
+    }
 
     static bool inHi = false, outHi = false;
     const bool ig = engine.InGate();
@@ -695,16 +723,16 @@ static void OnRender(uint32_t t_ms)
     constexpr LedPanel::Rgb kOff = {0, 0, 0};
     const bool lit = (t_ms - sliceFlashMs) < kSliceFlashVisMs;
 
-    /* Mode color: all three buttons wear it together. B2 dark-flashes on a
-     * slice, B3 goes dark while shift is armed. */
+    /* Mode color: all three buttons wear the visible page's hue. B2 dark-flashes
+     * on a slice. */
     const LedPanel::Rgb pc = hw.leds.ScaleGlobal(
-        routingActive ? kBlue : kPageButton[pager.Page()]);
+        b3Active ? kB3PageButton[b3Page] : kPageButton[pager.Page()]);
     hw.leds.SetButtonPair(0, pc);
     hw.leds.SetButtonPair(1, lit ? kOff : pc);
-    hw.leds.SetButtonPair(2, shiftArmed ? kOff : pc);
+    hw.leds.SetButtonPair(2, pc);
 
     /* Routing view: repaint every ring with its zone selector. */
-    if (routingActive)
+    if (RoutingOpen())
         for (uint8_t p = 0; p < NUM_POTS; p++)
             DrawRouteRing(p, routing.zone[p]);
 
@@ -740,17 +768,16 @@ static void OnRender(uint32_t t_ms)
     hw.leds.SetRingByHour(5, 6.0f,
         hw.leds.ScaleGlobal(LedPanel::Scale(kWhite, engine.EnvNormOut())));
 
-    /* Perf page + shift armed: repaint P2..P6 with their secondary ring, over
-     * the primary arcs. The 6pm CV pips above are untouched (this arc spans
-     * 7:30→4:30, never 6:00). */
-    if (shiftArmed && !routingActive && pager.Page() == 0)
-        for (uint8_t p = 1; p < 6; p++)
-            if (kSecEnabled[p])
-                DrawShiftArc(p, secState[p].stored, secState[p].caught);
+    /* Secondary page: repaint every ring over the B1 page underneath. The 6pm CV
+     * pips above are untouched (these arcs span 7:30→4:30, never 6:00). */
+    if (SecondaryOpen())
+        DrawSecondaryRings(t_ms);
 
-    /* Settings-saved confirm: all three buttons blink DARK briefly. Painted last
-     * so it overrides the normal button layer. */
-    if (saveFlashMs != 0 && (t_ms - saveFlashMs) < kSaveFlashMs)
+    /* Settings-saved confirm: all three buttons blink DARK three times. Painted
+     * last so it overrides the normal button layer. */
+    const uint32_t flashAge = t_ms - saveFlashMs;
+    if (saveFlashMs != 0 && flashAge < kSaveFlashMs
+        && ((flashAge / kSaveBlinkMs) & 1u) == 0u)
     {
         hw.leds.SetButtonPair(0, kOff);
         hw.leds.SetButtonPair(1, kOff);
@@ -800,8 +827,8 @@ int main(void) {
     pager.SetPageColor(1, kPink);
 
     presets.Manage(pager);
-    presets.Manage(routing);   /* mod-source zones (left the Pager in the
-                                * B3-double-tap rework) */
+    presets.Manage(routing);     /* mod-source zones */
+    presets.Manage(secondary);   /* secondary-settings norms */
     presets.UseNames();   /* knob names ride the store → HostLink descriptor */
 
     loop.Use(pager)
@@ -819,6 +846,10 @@ int main(void) {
      * re-arms on load). */
     presets.Init();
     presets.BootLoad();
+
+    /* Loaded secondaries only reach the engine if we push them once. */
+    for (uint8_t p = 0; p < NUM_POTS; p++)
+        if (kSecEnabled[p]) SecApply(p, SecValue(p, secState[p].stored));
 
     hw.seed.SetLed(true);
 #ifdef CAPICOLA_BENCH_LOG

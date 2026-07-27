@@ -37,18 +37,20 @@ class AudioEngine
 
     /* ── Parameter setters — ENGINEERING UNITS ───────────────────────────────
      * Knob→value mapping lives in the VirtualKnob declarations in main.cpp;
-     * these take the mapped values directly. Fade (= latency, ~20 ms) and the
-     * follower smoothing are fixed internals — constants in audio_engine.cpp. */
+     * these take the mapped values directly. */
     void SetSlicePitch          (float semis);   // P1 — pitch in semitones (0 = unity)
     void SetSliceStretch        (float stretch); // P2 — time stretch, 0.01..1
     void SetTransientThreshold  (float t);       // P3 — finder keep ratio (TKEO gate)
     void SetGrainSize           (float keyframes);// P4 — grain size (adaptive leash, keyframes)
     void SetMix                 (float wet01);   // P5 — dry/wet blend, 1 = full wet
     void SetFeedback            (float amt);     // P6 — TKEO-excited feedback gain
-    void SetFeedbackCutoff      (float fc);      // P6·shift — feedback SVF cutoff (normalised fc)
-    void SetTkeoCutoff          (float fc);      // P3·shift — finder SVF cutoff (envelope smoothing)
-    void SetTkeoResonance       (float q);       // P5·shift — finder SVF resonance, UNCAPPED
-    void SetQuality             (float epsilon); // P2·shift — analyzer keyframe threshold ε
+    void SetFeedbackCutoff      (float fc);      // feedback bandpass centre (normalised fc)
+    void SetTkeoCutoff          (float fc);      // finder SVF cutoff (envelope smoothing)
+    void SetTkeoResonance       (float q);       // finder SVF resonance, UNCAPPED (unbound)
+    void SetFade                (float samples); // OLA crossfade = latency = retrigger floor
+    void SetDrive               (float d);       // keyframe waveshaper drive
+    void SetDriveCharacter      (float c);       // 0 = sinc, 0.5 = clean, 1 = sin
+    void SetQuality             (float epsilon); // P5 — analyzer keyframe threshold ε
 
     /* ── Follower IO signals (input chain + output chain) ────────────────────
      * The OUTPUT follower is a second Detector on the final (post-mix) mono sum;
@@ -76,10 +78,8 @@ class AudioEngine
 
     float mix = 1.0f;   // dry/wet, 1.0 = full wet (stretched)
 
-    /* P6 feedback: last block's wet (pitched) output → tanh → its own SVF, taking
-     * a 50/50 highpass+bandpass mix (kills DC/lows, keeps bite), scaled by fbAmt
-     * and summed into this block's recorder input. One-block delayed; the
-     * per-sample injection keeps a hard ±1 clamp as the runaway guard. */
+    /* P6 feedback: last block's wet output → sinc saturator → SVF bandpass,
+     * scaled by fbAmt into this block's input. Hard ±1 clamp guards runaway. */
     static constexpr std::size_t kMaxBlock = AUDIO_BLOCK_SAMPLES;
     float fbAmt = 0.0f;
     float fbL[kMaxBlock] = {0.0f};

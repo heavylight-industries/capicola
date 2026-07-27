@@ -8,6 +8,7 @@
 #include <cmath>
 #include "daisy_seed.h"
 #include "KeyframeRecorder.h"
+#include "Shapers.h"
 
 namespace AlchemyLabAudio {
 
@@ -19,9 +20,13 @@ static constexpr int kRingFrames = 1048576;   // 2^20 per channel
 static KeyframeRecorder<kRingFrames> DSY_SDRAM_BSS sparse_l;
 static KeyframeRecorder<kRingFrames> DSY_SDRAM_BSS sparse_r;
 
+/* Waveshaper LUTs — 3 × 4096 floats. Kept in SRAM, not SDRAM: read every
+ * keyframe. Shared by both channels and the feedback saturator. */
+static Shapers shapers;
+
 namespace {
-/* OLA crossfade: the monitoring latency AND the retrigger floor. 20 ms → snappy
- * punches, 50 Hz max retrig. */
+/* OLA crossfade boot value (secondary P2 sets it live): the monitoring latency
+ * AND the retrigger floor. */
 constexpr float kFadeSamples = 960.0f;    // 20 ms @ 48 kHz
 
 /* Stereo re-alignment guardrail. When exactly one channel auto-fires and the two
@@ -29,9 +34,11 @@ constexpr float kFadeSamples = 960.0f;    // 20 ms @ 48 kHz
  * re-anchoring to the same delayed tap. Below this they stay independent. */
 constexpr double kMaxDriftSamples = 48000.0;   // 1 s @ 48 kHz
 
-/* Feedback-path SVF cutoff (normalised fc). 0.02 ≈ 480 Hz — the HP+BP mix above
- * this keeps bite and strips DC/lows. */
+/* Feedback bandpass centre (normalised fc). 0.02 ≈ 480 Hz. */
 constexpr float kFbFilterFc = 0.02f;
+
+/* Cancels the sinc shaper's 2x small-signal gain so the loop matches tanh. */
+constexpr float kFbSatGain = 0.5f;
 
 /* Follower SVF cutoff (envelope smoothing), shared by the input detectors and
  * the output follower. */
@@ -55,9 +62,12 @@ void AudioEngine::Init()
     /* CPU load meter for the audio callback (48 kHz, 64-sample blocks). */
     cpuMeter.Init(48000.0f, (int)kMaxBlock);
 
+    /* Tabulate the waveshapers before the recorders bind to them. */
+    shapers.Init();
+
     /* Start live capture + granular playback on both channels. */
-    sparse_l.Init();
-    sparse_r.Init();
+    sparse_l.Init(&shapers);
+    sparse_r.Init(&shapers);
     sparse_l.SetThreshold(0.001f);
     sparse_r.SetThreshold(0.001f);
     sparse_l.SetGrainPitch(1.0f);
@@ -101,10 +111,10 @@ void AudioEngine::ProcessBlock(const float* in_l, const float* in_r,
     {
         for (std::size_t i = 0; i < m; i++)
         {
-            fbSvfL.Tick(std::tanh(fbL[i]));
-            fbSvfR.Tick(std::tanh(fbR[i]));
-            const float vl = 0.5f * (fbSvfL.GetHighpass() + fbSvfL.GetBandpass());
-            const float vr = 0.5f * (fbSvfR.GetHighpass() + fbSvfR.GetBandpass());
+            fbSvfL.Tick(kFbSatGain * shapers.ReadSinc(fbL[i]));
+            fbSvfR.Tick(kFbSatGain * shapers.ReadSinc(fbR[i]));
+            const float vl = fbSvfL.GetBandpass();
+            const float vr = fbSvfR.GetBandpass();
 
             float inj_l = vl * fbAmt;
             float inj_r = vr * fbAmt;
@@ -239,11 +249,29 @@ void AudioEngine::SetTkeoCutoff(float fc)
 
 void AudioEngine::SetTkeoResonance(float q)
 {
-    /* P5·shift — finder SVF resonance, UNCAPPED (filter.h maps Q = 0.5 + 4q);
-     * large q rings into self-oscillation. Input side only. */
+    /* Finder SVF resonance, UNCAPPED (filter.h maps Q = 0.5 + 4q); large q rings
+     * into self-oscillation. Input side only. */
     const float qq = (q < 0.0f) ? 0.0f : q;
     sparse_l.SetTkeoResonance(qq);
     sparse_r.SetTkeoResonance(qq);
+}
+
+void AudioEngine::SetFade(float samples)
+{
+    sparse_l.SetGrainFade(samples);
+    sparse_r.SetGrainFade(samples);
+}
+
+void AudioEngine::SetDrive(float d)
+{
+    sparse_l.SetDistortDrive(d);
+    sparse_r.SetDistortDrive(d);
+}
+
+void AudioEngine::SetDriveCharacter(float c)
+{
+    sparse_l.SetDistortCharacter(c);
+    sparse_r.SetDistortCharacter(c);
 }
 
 void AudioEngine::TriggerSlice()

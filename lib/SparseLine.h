@@ -171,4 +171,26 @@ public:
         }
         return 0.0f;
     }
+
+    // Shaped read: the waveshaper hits the two KEYFRAMES, and the interpolation
+    // runs over the shaped values. The nonlinearity never sees the sample rate,
+    // so it cannot fold new partials back into the band.
+    template <typename ShapeFn>
+    inline float Read(const Window& w, float t, InterpMode mode, ShapeFn fn) {
+        if (t < 0.0f) t = 0.0f; else if (t > 1.0f) t = 1.0f;
+        const float v1 = fn(w.p1->value);
+        const float v2 = fn(w.p2->value);
+        switch (mode) {
+            case InterpMode::LINEAR:
+                return v1 + t * (v2 - v1);
+            case InterpMode::CATMULLROM: {
+                const float t2 = t * t;
+                const float h0 = (2.0f * t - 3.0f) * t2 + 1.0f;
+                const float h1 = (-2.0f * t + 3.0f) * t2;
+                return h0 * v1 + h1 * v2;
+            }
+            default: break;
+        }
+        return 0.0f;
+    }
 };

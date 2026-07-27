@@ -3,6 +3,7 @@
 #include <Analyzer.h>    // keyframe writer (raw ring + sparsifier)
 #include <Granule.h>     // self-contained grain reader (own fences, self-healing)
 #include <Detector.h>    // transient finder (TKEO + SVF + peak keyframer)
+#include <Shapers.h>     // tabulated waveshapers (optional; Init(nullptr) = clean)
 #include <cstddef>
 #include <cstdint>
 
@@ -67,6 +68,27 @@ private:
     // (SLICE) bypasses this.
     float trigGate;   // refractory countdown; doubles as the B1 LED state
 
+    // Waveshaper. Applied to KEYFRAMES on the way out, never to the interpolated
+    // stream — the nonlinearity never sees the sample rate, so it cannot alias.
+    const Shapers* shapers;   // null = clean path, no shaping at all
+    float drive;
+    float character;          // 0 = quake, 0.5 = bypass, 1 = sinc
+
+    static constexpr float kBypassEps = 1e-4f;
+
+    inline float Shape(float x) const {
+        if (!shapers) return x;
+        const float d = character - 0.5f;
+        if (d > -kBypassEps && d < kBypassEps) return x;
+        const float xd = x * drive;
+        if (d < 0.0f) {
+            const float t = character * 2.0f;
+            return (1.0f - t) * shapers->ReadQuake(xd) + t * x;
+        }
+        const float t = d * 2.0f;
+        return (1.0f - t) * x + t * shapers->ReadSinc(xd);
+    }
+
     void ApplyParams() {
         for (Granule<bufsz>& g : granule) {
             g.SetPitch(curPitch);
@@ -101,9 +123,10 @@ private:
     // Mixed read of the trading pair; the retired grain is skipped once the ramp
     // completes.
     inline float ReadPair() {
-        if (xGain >= 1.0f) return granule[liveG].Read();
-        const float in  = granule[liveG].Read();
-        const float out = granule[liveG ^ 1].Read();
+        auto shape = [this](float v) { return Shape(v); };
+        if (xGain >= 1.0f) return granule[liveG].Read(shape);
+        const float in  = granule[liveG].Read(shape);
+        const float out = granule[liveG ^ 1].Read(shape);
         const float y   = in * xGain + out * (1.0f - xGain);
         xGain += xStep;
         if (xGain > 1.0f) xGain = 1.0f;
@@ -116,7 +139,10 @@ public:
     // SDRAM controller — and bus-fault on the first write. Everything initializes
     // in Init(), called from AudioEngine::Init() after hw.Init().
 
-    void Init() {
+    void Init(const Shapers* sh = nullptr) {
+        shapers   = sh;
+        drive     = 1.0f;
+        character = 0.5f;   // bypass
         sparse.Init();
         analyzer.Init(sparse);
         granule[0].Init(sparse, 0.0);
@@ -151,6 +177,8 @@ public:
     void SetTransientThreshold(float t) { detector.SetThreshold(t); }
     void SetTkeoCutoff(float fc)        { detector.SetCutoff(fc); }
     void SetTkeoResonance(float r)      { detector.SetResonance(r); }
+    void SetDistortDrive(float d)       { drive = d; }
+    void SetDistortCharacter(float c)   { character = c; }
 
     State GetState() { return currentState; }
 

@@ -15,19 +15,18 @@
             }
         },
         {
-            "name": "arm-debug",
-            "displayName": "Alchemy Lab V2 — SWD/SRAM debug (no bootloader)",
-            "description": "Self-initialising SRAM image (-Og -g3); loaded into SRAM by the probe for step debugging.",
+            "name": "arm-bench",
+            "displayName": "Alchemy Lab V2 — bench (1 Hz CPU/CV serial log, no HostLink)",
+            "description": "Deploy image with the serial log on the front USB instead of HostLink.",
             "inherits": "arm",
-            "binaryDir": "${sourceDir}/build-arm-debug",
+            "binaryDir": "${sourceDir}/build-arm-bench",
             "cacheVariables": {
-                "ALCHEMY_DEBUG_SRAM": "ON",
-                "CMAKE_BUILD_TYPE": "Debug"
+                "CAPICOLA_BENCH_LOG": "ON"
             }
         }
     ],
     "buildPresets": [
         { "name": "arm",       "configurePreset": "arm" },
-        { "name": "arm-debug", "configurePreset": "arm-debug" }
+        { "name": "arm-bench", "configurePreset": "arm-bench" }
     ]
 }

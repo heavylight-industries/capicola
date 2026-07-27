@@ -65,6 +65,13 @@ private:
         return ph.result;
     }
 
+    template <typename ShapeFn>
+    float Sample(Playhead& ph, ShapeFn fn) {
+        ph.tau    = (float)(ph.w.endTime - ph.index) * ph.w.invDuration;
+        ph.result = sparse_->Read(ph.w, ph.tau, InterpMode::CATMULLROM, fn);
+        return ph.result;
+    }
+
 public:
     // Implicit trivial constructor on purpose (SDRAM-resident; see Init()).
 
@@ -172,8 +179,14 @@ public:
         splicePhase = 0.0f;
     }
 
-    // Produce one output sample.
-    float Read() {
+    // Produce one output sample, unshaped. Kept as the generic entry point for
+    // ports that don't want the waveshaper; delegates through an identity
+    // functor so there is only one implementation.
+    float Read() { return Read([](float v) { return v; }); }
+
+    // Produce one output sample, shaping each keyframe on the way out.
+    template <typename ShapeFn>
+    float Read(ShapeFn fn) {
         // Keep every cursor's keyframe bracket ahead of its index.
         if (ideal.index  > ideal.w.endTime)          sparse_->StepWindow(ideal.w,  ideal.index);
         if (actual.index > actual.w.endTime)         sparse_->StepWindow(actual.w, actual.index);
@@ -256,8 +269,8 @@ public:
         // ── crossfade in progress ────────────────────────────────────────────
         if (splicing && splicePhase <= 1.0f) {
             temp.speed = pitch;                    // stay locked to live pitch
-            float in  = Sample(temp);
-            float out = Sample(actual);
+            float in  = Sample(temp, fn);
+            float out = Sample(actual, fn);
             temp.index   += temp.speed;
             actual.index += actual.speed;
 
@@ -274,7 +287,7 @@ public:
         }
 
         // ── steady read ──────────────────────────────────────────────────────
-        float out = Sample(actual);
+        float out = Sample(actual, fn);
         actual.index += actual.speed;
         return out;
     }
