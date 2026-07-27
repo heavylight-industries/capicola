@@ -3,6 +3,7 @@
 #include <DeluxeLine.h>   // raw input ring + B-spline front end (CubicResult)
 #include <SparseLine.h>   // shared sparse keyframe buffer (Keyframe/Window)
 #include <cmath>
+#include <cstdint>
 
 // The keyframe writer. Owns the raw input ring and the write head (rawCount, in
 // raw samples), consumes one sample per Analyze(), and sparsifies the stream
@@ -18,8 +19,10 @@ private:
     DeluxeLine<float,8> raw;         // raw input ring for the B-spline front end
     CubicResult         mostRecent;  // last front-end read (value + d1)
 
-    int    rawCount;                 // write head, in raw samples
-    int    sparseCount;              // keyframes written
+    // 64-bit: both are monotonic for the life of the session and nothing
+    // re-Init()s the analyzer, so 32 bits wrapped after 12 h 25 min of uptime.
+    int64_t rawCount;                // write head, in raw samples
+    int64_t sparseCount;             // keyframes written
     float  threshold;                // value-diff gate for storing a peak
     float  fs;                       // sample rate
     bool   firstAnalysis;            // seed the very first keyframe unconditionally
@@ -50,8 +53,8 @@ public:
     void SetThreshold(float t) { threshold = t; }
     void ArmFinalFrame()       { armFinal = true; }   // force a closing keyframe
 
-    int    WriteHead()     const { return rawCount; }
-    int    KeyframeCount() const { return sparseCount; }
+    int64_t WriteHead()     const { return rawCount; }
+    int64_t KeyframeCount() const { return sparseCount; }
     bool   IsEmpty()       const { return sparseCount == 0; }
     bool   IsFull()        const { return sparseCount >= bufsz - 1; }
     float  SampleRate()    const { return fs; }
