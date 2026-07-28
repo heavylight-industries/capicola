@@ -13,6 +13,11 @@ KeyframeRecorder.h is the core method as described in the paper, and is set up f
 - Tabulated function storage and recall for convenient low cost tanh(), sin(), and so on.
 - A TKEO driven peak detector with adaptive thresholding
 
+**Panel reference:** the
+[interactive manual](https://heavylight-industries.github.io/capicola/manual.html)
+(live faceplate render, per-page LED state) or [MANUAL.md](MANUAL.md) —
+pages, buttons, jack map, fixed internals.
+
 ## Layout
 
 - `src/main.cpp` — the entire UI: `VirtualKnob` declarations carry all

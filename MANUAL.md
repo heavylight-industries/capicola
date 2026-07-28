@@ -2,6 +2,10 @@
 
 *Auto-slicer / keyframe time-stretcher, Alchemy Lab V2. Firmware 0.3.0, 2026-07-27.*
 
+> **Interactive version:**
+> [heavylight-industries.github.io/capicola/manual.html](https://heavylight-industries.github.io/capicola/manual.html)
+> — the same reference drawn on the real faceplate, with live LED state per page.
+
 Capicola listens constantly. Two independent channels (L/R) each run a transient
 detector over the input; every detected transient — or a press of **B2**, or a
 rising edge on **TRIG IN** — splices the granular playback head onto fresh
@@ -24,8 +28,8 @@ within the group.
 
 | Button | Pages (in order) | Mode colors |
 |---|---|---|
-| **B1** | Performance → Mod depth | **orange** → **pink** |
-| **B3** | Mod routing → Secondary settings | **blue** → **teal** |
+| **B1** | Perf → Depth | **orange** → **pink** |
+| **B3** | Routing → Secondary | **blue** → **teal** |
 
 The active page's mode color is worn simultaneously by all three button LEDs.
 Button LEDs are never off, so activity feedback is a **dark flash**: B2 blinks
@@ -47,7 +51,7 @@ untouched until the next B2 hold).
 
 ---
 
-## Performance page (B1 · orange)
+## Perf (B1 · page 1 · orange)
 
 | Knob | Function | Range | Notes |
 |---|---|---|---|
@@ -82,7 +86,7 @@ out-envelope (P6).
 
 ---
 
-## Mod depth page (B1 · pink)
+## Depth (B1 · page 2 · pink)
 
 Each pot is the **bipolar modulation depth** for the same-numbered performance
 knob: noon = off, CW (pink) = positive, CCW (orange) = negative. A faint
@@ -94,7 +98,7 @@ sources are unipolar 0..1; the CV IN jack is bipolar ±1.
 
 ---
 
-## Mod routing page (B3 · blue)
+## Routing (B3 · page 1 · blue)
 
 Each pot is a **3-zone selector** choosing the mod source for the same-numbered
 performance knob, CCW → CW:
@@ -118,7 +122,7 @@ splices — it's a signal source only.
 
 ---
 
-## Secondary settings page (B3 · teal)
+## Secondary (B3 · page 2 · teal)
 
 Deeper voicing controls. Saved with everything else in the preset store.
 
