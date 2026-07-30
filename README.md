@@ -1,15 +1,15 @@
 # Capicola
-Real-time time stretcher, pitch shifter, transient detector, and envelope follower module built on the Hermetic Modular Alchemy Lab platform. This is the hardware embodiment of my independently authored, peer reviewed DAFx26 paper titled "Keyframe Time Stretching via Extrema Sampling". 
+Real-time time stretcher, pitch shifter, transient detector, and envelope follower module built on the Hermetic Modular Alchemy Lab platform. This is the hardware embodiment of my independently authored, peer reviewed DAFx26 paper titled "*Keyframe Time Stretching via Extrema Sampling*". 
 
-The core idea of the module is this: Incoming stereo audio gets stretched out, and in parallel its envelope and transients are extracted. When a transient passes the threshold, it causes the lagging read head to snap to the current time with a short crossfade while continuing to stretch from the new position. This provides a means of time stretching while staying true to the rhythm of the input. The block diagram is shown below.
+The core idea of the module is this: Incoming stereo audio gets stretched out, and in parallel its envelope and transients are extracted. When a transient passes the threshold, it causes the lagging read head to snap to the current time with a short crossfade, where then audio is stretched from the new position. This provides a means of time stretching while staying true to the rhythm of the input. The block diagram is shown below.
 
 *INSERT BLOCK DIAGRAM HERE*
 
-The input and output envelope followers and their transients don't just live internal to the module. They're always accessible on the CV outputs of the module to trigger and modulate external devices. And, each of the performance controls is normalized to the envelope followers, enabling the dynamics of the signal to modulate the controls in real time, leading to some bizarre and creative self patching that's clearly visualized by the LED rings and can be as subtle or extreme as desired. 
+The input and output envelope followers and their transients don't just live internal to the module. They're always accessible on the CV outputs of the module to trigger and modulate external devices. Each of the performance controls is normalized to the envelope followers, enabling the dynamics of the signal to modulate the controls in real time, leading to some bizarre and creative self patching that's clearly visualized by the LED rings. This can be as subtle or extreme as desired. 
 
 KeyframeRecorder.h is the core method as described in the paper, and is set up for offline recording and playback use in contexts other than the Alchemy Lab. Additionally, lib contains several header files that are useful in their own right, namely:
-- An implementation of Vadim Zavalashin's "Zero Delay Feedback" filters (1-pole, state variable, and 4 pole ladder)
-- "Deluxe" delay lines that offers not just Hermite or B-Spline interpolated reads from a ring buffer, but also high quality first and second derivatives along with the Teager-Kaiser Energy Operator (TKEO).
+- An implementation of Vadim Zavalashin's "Zero Delay Feedback" filters (1-pole, state variable filter)
+- A "Deluxe" delay line class that offers not just Hermite or B-Spline interpolated reads from a ring buffer, but also 1st and 2nd derivatives and the Teager-Kaiser Energy Operator (TKEO).
 - Tabulated function storage and recall for convenient low cost tanh(), sin(), and so on.
 - A TKEO driven peak detector with adaptive thresholding
 
@@ -28,10 +28,8 @@ pages, buttons, jack map, fixed internals.
   `KeyframeRecorder` chains, filtered feedback, dry/wet mix, and the
   output-side follower. Setters take engineering units.
 - `lib/` — the DSP (`KeyframeRecorder` / `Analyzer` / `SparseLine` /
-  `Granule` / `Detector`) plus the tabulated waveshapers
-  (`Shapers` / `TabulatedFunction` / `Tabulator` / functors). Header-only.
-  The waveshaper is applied to keyframes before interpolation, so drive
-  cannot alias.
+  `Granule` / `Detector`) 
+  (`Shapers` / `TabulatedFunction` / `Tabulator` / `functors`). 
 - `lib/alchemy-sdk/` — the SDK (submodule); vendors libDaisy under
   `lib/alchemy-sdk/vendor/libDaisy`.
 
@@ -60,8 +58,12 @@ hold while powering on), then:
 ```sh
 cmake --build --preset arm --target capicola-flash
 ```
-
 `...-size` prints the memory footprint.
+
+## AI Policy
+The core engines contained within this repo are human created. The intellectual property of keyframe time stretching, the granular slicing engine, the TKEO based envelope detection, etc were developed by me and me alone. Before I knew if the keyframe engine was actually feasible for audio, I tried to have the AI do the solve the problem for me, but it failed every time. It wasn't until I put in the hard work to translate my mental model of the sparse and uniform domains into C++ that the engine sprung to life. 
+
+That being said, I used AI to assist the creation of the documentation and the linking of my core code to the Alchemy Lab SDK. My take on it is this - given enough time, I could have done it all on my own. But the AI never could have created the work presented here on its own. So its a matter of efficiency and delegation, and using my own judgement to determine what tasks I hand off to it. 
 
 ## License
 
