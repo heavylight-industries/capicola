@@ -18,18 +18,16 @@ KeyframeRecorder.h is the core method as described in the paper, and is set up n
 (live faceplate render, per-page LED state) or [MANUAL.md](MANUAL.md) —
 pages, buttons, jack map, fixed internals.
 
+## AI Policy
+The core engines contained within this repo are human created. The intellectual property of keyframe time stretching, the granular slicing engine, etc were developed by me and me alone. Before I knew if the keyframe engine was actually feasible for audio, I tried to have the AI the solve the problem for me, and it failed every time. It wasn't until I put in the hard work to translate my mental model of the sparse and uniform domains into C++ of my own creation that the engine sprung to life. 
+
+That being said, I used AI to assist the creation of the documentation and the linking of my core code to the Alchemy Lab SDK. My take on it is this - given enough time, I could have done it all on my own. But the AI never could have created the work presented here on its own. So its a matter of efficiency and delegation, and using my own judgement to determine what tasks I hand off to it. 
+
 ## Layout
 
-- `src/main.cpp` — the entire UI: `VirtualKnob` declarations carry all
-  knob→unit mappings, composed into two page groups (B1: perf/depth on a
-  `Pager`; B3: routing/secondary, hand-rolled); mod routing (`ModRouter`),
-  CV IO, LED layers and presets all live here.
-- `src/audio/` — `AudioEngine`: owns the two per-channel
-  `KeyframeRecorder` chains, filtered feedback, dry/wet mix, and the
-  output-side follower. Setters take engineering units.
-- `lib/` — the DSP (`KeyframeRecorder` / `Analyzer` / `SparseLine` /
-  `Granule` / `Detector`) 
-  (`Shapers` / `TabulatedFunction` / `Tabulator` / `functors`). 
+- `src/main.cpp` — the entire UI, utilizing the Alchemy Lab SDK.
+- `src/audio/` — `AudioEngine`: owns the top level objects and audio routing.
+- `lib/` — the DSP core.
 - `lib/alchemy-sdk/` — the SDK (submodule); vendors libDaisy under
   `lib/alchemy-sdk/vendor/libDaisy`.
 
@@ -59,11 +57,6 @@ hold while powering on), then:
 cmake --build --preset arm --target capicola-flash
 ```
 `...-size` prints the memory footprint.
-
-## AI Policy
-The core engines contained within this repo are human created. The intellectual property of keyframe time stretching, the granular slicing engine, etc were developed by me and me alone. Before I knew if the keyframe engine was actually feasible for audio, I tried to have the AI the solve the problem for me, and it failed every time. It wasn't until I put in the hard work to translate my mental model of the sparse and uniform domains into C++ of my own creation that the engine sprung to life. 
-
-That being said, I used AI to assist the creation of the documentation and the linking of my core code to the Alchemy Lab SDK. My take on it is this - given enough time, I could have done it all on my own. But the AI never could have created the work presented here on its own. So its a matter of efficiency and delegation, and using my own judgement to determine what tasks I hand off to it. 
 
 ## License
 
