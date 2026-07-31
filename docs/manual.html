@@ -45712,17 +45712,17 @@ const flat    = ()      => ({t:"flat"});
 
 const VIEWS = {
   perf: {
-    name: "Perf", hue: C.orange, gesture: "B1 · page 1 of 2",
-    caption: "Perf page · factory defaults — buttons wear orange",
+    name: "Primary", hue: C.orange, gesture: "B1 · page 1 of 2",
+    caption: "Primary page · factory defaults — buttons wear orange",
     buttons: [C.orange, C.orange, C.orange],
-    lede: "The playing surface. Every knob maps to an engineering unit; rings show the caught value. <strong>B2 splices by hand</strong>, and every detected transient splices playback onto fresh material.",
+    lede: "The primary performance controls that give hands on access to the most impactful settings of the engine.",
     knobs: [   /* positions = kPageDefaults: pitch unity, grain low, quality max, fb off */
-      { l:"Pitch",       r:"±12 st — unity at noon, ±0.2 st detent snaps true 0", ring: bipolar(0.0, C.orange, C.blue) },
-      { l:"Stretch",     r:"realtime → <em>frozen</em> · ~6× slow at noon",       ring: sweep(0.5, C.orange) },
-      { l:"Slice thresh",r:"keep ratio 0–8 over env average · top = mute",        ring: sweep(0.5, C.orange) },
-      { l:"Grain size",  r:"32 → 4096 keyframes",                                 ring: sweep(0.3, C.orange) },
-      { l:"Quality",     r:"analyzer ε 0.1 (crunchy) → 0.001 (max)",              ring: sweep(1.0, C.orange) },
-      { l:"Feedback",    r:"0 → 1.5 · wet → sinc sat → bandpass → recorder",      ring: sweep(0.0, C.orange) },
+      { l:"Pitch",       r:"±12 semitones — unity at noon, ±0.2 semitone detent snaps true 0", ring: bipolar(0.0, C.orange, C.blue) },
+      { l:"Stretch",     r:"realtime → 6× slow at noon → <em>frozen</em>",        ring: sweep(0.5, C.orange) },
+      { l:"Slice thresh",r:"amplitude threshold for a transient to trigger a slice · max = disabled", ring: sweep(0.5, C.orange) },
+      { l:"Grain size",  r:"adaptive loop length, measured in keyframes",         ring: sweep(0.3, C.orange) },
+      { l:"Quality",     r:"crunchy tape → highest quality",                      ring: sweep(1.0, C.orange) },
+      { l:"Feedback",    r:"0 → 1.5 · beyond ⅔, gain > 1",                        ring: sweep(0.0, C.orange) },
     ],
     legend: [[C.orange,"value"],[C.blue,"negative pitch"]],
     aside: "<b>Activity flashes OFF:</b> B2 goes dark on every trigger (manual or detected), so events stay legible over any page hue. PITCH's 6-o'clock pip doubles as the TRIG IN probe."
@@ -45732,13 +45732,13 @@ const VIEWS = {
     name: "Depth", hue: C.pink, gesture: "B1 · page 2 of 2",
     caption: "Depth page — buttons wear pink",
     buttons: [C.pink, C.pink, C.pink],
-    lede: "One bipolar depth per perf knob: each pot sets how hard its own modulation source pushes it, −1 … +1 around noon.",
+    lede: "One bipolar depth per primary knob: each pot sets how hard its own modulation source pushes it, −1 … +1 around noon.",
     knobs: [
       { l:"Pitch depth",     r:"−1 … +1", ring: bipolar( 0.5,  C.pink, C.orange) },
       { l:"Stretch depth",   r:"−1 … +1", ring: bipolar(-0.3,  C.pink, C.orange) },
-      { l:"Thresh depth",    r:"−1 … +1", ring: bipolar(-0.45, C.pink, C.orange) },
+      { l:"Thresh depth",    r:"−1 … +1", ring: bipolar( 0.45, C.pink, C.orange) },
       { l:"Grain depth",     r:"−1 … +1", ring: bipolar( 0.8,  C.pink, C.orange) },
-      { l:"Quality depth",   r:"−1 … +1", ring: bipolar(-0.6,  C.pink, C.orange) },
+      { l:"Quality depth",   r:"−1 … +1", ring: bipolar( 0.6,  C.pink, C.orange) },
       { l:"Feedback depth",  r:"−1 … +1", ring: bipolar( 0.35, C.pink, C.orange) },
     ],
     legend: [[C.pink,"positive depth"],[C.orange,"negative depth"]],
@@ -45749,7 +45749,7 @@ const VIEWS = {
     name: "Routing", hue: C.blue, gesture: "B3 · page 1 of 2",
     caption: "Routing page · factory (all output follower) — buttons wear blue",
     buttons: [C.blue, C.blue, C.blue],
-    lede: "Each perf pot picks its modulation source from three ring zones, with zone-granular catch. Stored in presets. The factory default is the <strong>output follower</strong> — the module modulates itself with what it's already playing.",
+    lede: "Each primary pot picks its modulation source from three ring zones, with zone-granular catch. Stored in presets. The factory default is the <strong>output follower</strong> — the module modulates itself with what it's already playing.",
     knobs: [   /* factory: RoutingStore = all output follower */
       { l:"Pitch source",   r:"out follower", ring: zones(1) },
       { l:"Stretch source", r:"out follower", ring: zones(1) },
@@ -45766,17 +45766,17 @@ const VIEWS = {
     name: "Secondary", hue: C.teal, gesture: "B3 · page 2 of 2",
     caption: "Secondary settings · defaults — buttons wear teal",
     buttons: [C.teal, C.teal, C.teal],
-    lede: "Deeper voicing controls with their own pot-catch, <strong>saved with everything else</strong> in the preset store. Drive shapes the <em>keyframes themselves</em> before interpolation — the nonlinearity never sees the sample rate, so it can't alias.",
+    lede: "Deeper voicing controls with their own pot-catch, <strong>saved with everything else</strong> in the preset store. Our unique approach to drive operates in the sparse domain to minimize aliasing.",
     knobs: [   /* defaults = engine boot values (kSecDefault norms) */
       { l:"Env smoothing", r:"follower cutoff · ~1 Hz at CCW, exp",            ring: sweep(0.43, C.teal) },
-      { l:"Fade",          r:"10 → 250 ms · latency = crossfade = retrig floor", ring: sweep(0.22, C.teal) },
+      { l:"Fade",          r:"10 → 250 ms latency / splice duration",          ring: sweep(0.22, C.teal) },
       { l:"Drive",         r:"keyframe shaper gain 0.5 → 4.0",                 ring: sweep(0.14, C.teal) },
-      { l:"Character",     r:"quake ← clean → sinc · default full sinc",       ring: sweep(1.0,  C.teal) },
+      { l:"Character",     r:"low amplitude dropout → clean → sinc shaper",    ring: sweep(1.0,  C.teal) },
       { l:"Mix",           r:"dry/wet · default full wet",                     ring: sweep(1.0,  C.teal) },
-      { l:"Feedback tone", r:"loop bandpass centre · ~480 Hz default, exp",    ring: sweep(0.38, C.teal) },
+      { l:"Feedback tone", r:"bandpass cutoff, 480 Hz default",                ring: sweep(0.38, C.teal) },
     ],
     legend: [[C.teal,"value"]],
-    aside: "<b>Fade is three things at once:</b> the wet path's latency, the splice crossfade, and the retrigger floor. Short = clicky machine-gun splices; long = smeared washes that cap the splice rate at a few Hz."
+    aside: "<b>Fade is two things at once:</b> the baseline latency of the module and the splice duration. Short = clicky machine-gun splices; long = smeared washes that cap the splice rate at a few Hz."
   }
 };
 

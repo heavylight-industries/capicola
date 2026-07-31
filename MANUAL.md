@@ -28,7 +28,7 @@ within the group.
 
 | Button | Pages (in order) | Mode colors |
 |---|---|---|
-| **B1** | Perf → Depth | **orange** → **pink** |
+| **B1** | Primary → Depth | **orange** → **pink** |
 | **B3** | Routing → Secondary | **blue** → **teal** |
 
 The active page's mode color is worn simultaneously by all three button LEDs.
@@ -51,7 +51,7 @@ untouched until the next B2 hold).
 
 ---
 
-## Perf (B1 · page 1 · orange)
+## Primary (B1 · page 1 · orange)
 
 | Knob | Function | Range | Notes |
 |---|---|---|---|
@@ -92,7 +92,7 @@ Each pot is the **bipolar modulation depth** for the same-numbered performance
 knob: noon = off, CW (pink) = positive, CCW (orange) = negative. A faint
 page-hued glow marks a centered (inactive) depth. B1+B3 zeroes the whole page.
 
-Modulation is applied as an offset to the perf knob's *position* —
+Modulation is applied as an offset to the primary knob's *position* —
 `source × depth` — then runs through that knob's normal range mapping. Follower
 sources are unipolar 0..1; the CV IN jack is bipolar ±1.
 
@@ -158,7 +158,7 @@ unity pitch. Full wet is the classic Capicola behavior.
 
 | | Idle | Action |
 |---|---|---|
-| **B1** | mode color | Click: perf ↔ depth (or return to the B1 group). Held with B3 0.5 s: reset visible page. |
+| **B1** | mode color | Click: primary ↔ depth (or return to the B1 group). Held with B3 0.5 s: reset visible page. |
 | **B2** | mode color | Press: force-trigger a splice on both channels (works even at threshold mute). Held 1.5 s: save settings. Dark blink on trigger. |
 | **B3** | mode color | Click: routing ↔ secondary (or return to the B3 group). |
 
