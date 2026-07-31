@@ -29,7 +29,7 @@ adaptive splicing, and continuous time and pitch control, as described in the
 paper. The transient driven multi grain slicing of capicola is not present in
 these examples, what you hear is the engine alone. Capicola example audio and
 in depth demonstrations will be posted soon both here and on my YouTube
-channel, [dialectricStudios](https://www.youtube.com/@dialectricStudios).
+channel, [Dialectric Studios](https://www.youtube.com/@dialectricStudios).
 
 ## AI Policy
 The core engines contained within this repo are human created. The intellectual property of keyframe time stretching, the granular slicing engine, etc were developed by me and me alone. Before I knew if the keyframe engine was actually feasible for audio, I tried to have the AI the solve the problem for me, and it failed every time. It wasn't until I put in the hard work to translate my mental model of the sparse and uniform domains into C++ of my own creation that the engine sprung to life. 
