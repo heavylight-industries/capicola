@@ -21,7 +21,7 @@ pages, buttons, jack map, fixed internals.
 ## AI Policy
 The core engines contained within this repo are human created. The intellectual property of keyframe time stretching, the granular slicing engine, etc were developed by me and me alone. Before I knew if the keyframe engine was actually feasible for audio, I tried to have the AI the solve the problem for me, and it failed every time. It wasn't until I put in the hard work to translate my mental model of the sparse and uniform domains into C++ of my own creation that the engine sprung to life. 
 
-That being said, I used AI to assist the creation of the documentation and the linking of my core code to the Alchemy Lab SDK. My take on it is this - given enough time, I could have done it all on my own. But the AI never could have created the work presented here on its own. So its a matter of efficiency and delegation, and using my own judgement to determine what tasks I hand off to it. 
+That being said, I used AI to assist the creation of the documentation and the linking of my core code to the Alchemy Lab SDK. At the end of the day, it's a matter of efficiency, delegation, and using my own judgement to determine what tasks I hand off to it. 
 
 ## Layout
 
