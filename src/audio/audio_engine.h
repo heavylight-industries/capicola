@@ -84,11 +84,11 @@ class AudioEngine
     float fbAmt = 0.0f;
     float fbL[kMaxBlock] = {0.0f};
     float fbR[kMaxBlock] = {0.0f};
-    StateVariable fbSvfL;   // feedback-path filters (init'd in Init())
-    StateVariable fbSvfR;
+    capicola::StateVariable fbSvfL;   // feedback-path filters (init'd in Init())
+    capicola::StateVariable fbSvfR;
 
     /* Output-side follower (final mono-summed output) + cached IO signals. */
-    Detector outDet;
+    capicola::Detector outDet;
     bool  inGate     = false;
     bool  outGate    = false;
     float envNormIn  = 0.0f;

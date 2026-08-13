@@ -10,3 +10,5 @@ __pycache__
 tools/web-preset-manager/package-lock.json
 tools/simulator/build/
 .vscode/.cortex-debug.*
+build-host
+renders

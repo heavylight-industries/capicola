@@ -2,6 +2,8 @@
 
 #include <cmath>
 
+namespace capicola {
+
 struct Sin
 {
     float operator()(float x) const
@@ -54,3 +56,5 @@ struct Quake
         return 1.0f - 1.0f / (1.0f + 20.0f * x4);
     }
 };
+
+} // namespace capicola

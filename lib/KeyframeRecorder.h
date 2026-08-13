@@ -7,6 +7,8 @@
 #include <cstddef>
 #include <cstdint>
 
+namespace capicola {
+
 // Transport state of the recorder.
 enum class State : uint8_t {
     STOPPED,
@@ -44,7 +46,7 @@ private:
     float xGain;     // gain of granule[liveG]; the other grain gets 1-xGain
     float xStep;     // per-sample ramp, 1/curFade
 
-    AlchemyLabAudio::Detector detector;   // transient finder over the recorded input
+    Detector detector;   // transient finder over the recorded input
     uint32_t transientCount;              // monotonic; the UI polls it for edges
 
     State   currentState;
@@ -127,7 +129,8 @@ private:
         if (xGain >= 1.0f) return granule[liveG].Read(shape);
         const float in  = granule[liveG].Read(shape);
         const float out = granule[liveG ^ 1].Read(shape);
-        const float y   = in * xGain + out * (1.0f - xGain);
+        const float w   = SmoothStep(xGain);
+        const float y   = in * w + out * (1.0f - w);
         xGain += xStep;
         if (xGain > 1.0f) xGain = 1.0f;
         return y;
@@ -321,3 +324,5 @@ public:
         }
     }
 };
+
+} // namespace capicola

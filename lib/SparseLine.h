@@ -4,6 +4,8 @@
 #include <cmath>
 #include <algorithm>
 
+namespace capicola {
+
 struct Keyframe {
     float value;
     double time;
@@ -23,6 +25,8 @@ struct Position {
 inline Distance operator-(Position a, Position b) {
     return { a.sparse - b.sparse, a.uniform - b.uniform };
 }
+
+inline float SmoothStep(float p) { return p * p * (3.0f - 2.0f * p); }
 
 // A window brackets a position between two adjacent keyframes. `index` is the
 // MONOTONIC keyframe index of p1 (the later frame); p2 sits at index-1.
@@ -194,3 +198,5 @@ public:
         return 0.0f;
     }
 };
+
+} // namespace capicola

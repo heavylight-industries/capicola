@@ -4,6 +4,8 @@
 #include <cstddef>
 #include <cstdint>
 
+namespace capicola {
+
 enum class Mirror : uint8_t {
     None,   // table covers [min, max] as-is
     Odd,    // table covers [0, max], f(-x) = -f(|x|)  (sin, saturators)
@@ -84,3 +86,5 @@ private:
     T                period_    = T(0);
     T                invPeriod_ = T(0);
 };
+
+} // namespace capicola

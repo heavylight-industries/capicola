@@ -15,6 +15,16 @@
             }
         },
         {
+            "name": "host",
+            "displayName": "Host — DSP core unit tests",
+            "description": "Native build of tests/host against lib/ (no SDK, no board).",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build-host",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
             "name": "arm-bench",
             "displayName": "Alchemy Lab V2 — bench (1 Hz CPU/CV serial log, no HostLink)",
             "description": "Deploy image with the serial log on the front USB instead of HostLink.",
@@ -27,6 +37,14 @@
     ],
     "buildPresets": [
         { "name": "arm",       "configurePreset": "arm" },
-        { "name": "arm-bench", "configurePreset": "arm-bench" }
+        { "name": "arm-bench", "configurePreset": "arm-bench" },
+        { "name": "host",      "configurePreset": "host" }
+    ],
+    "testPresets": [
+        {
+            "name": "host",
+            "configurePreset": "host",
+            "output": { "outputOnFailure": true }
+        }
     ]
 }

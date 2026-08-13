@@ -1,5 +1,4 @@
-#ifndef FILTER_H
-#define FILTER_H
+#pragma once
 
 #include <array>
 #include <cmath>
@@ -7,6 +6,8 @@
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
+
+namespace capicola {
 
 // One-pole TPT (zero-delay feedback) filter, low/high/all-pass outputs.
 class OnePole {
@@ -100,4 +101,4 @@ private:
     float den;
 };
 
-#endif
+} // namespace capicola

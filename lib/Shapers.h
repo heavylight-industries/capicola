@@ -5,6 +5,8 @@
 #include "functors.h"
 #include <cmath>
 
+namespace capicola {
+
 class Shapers
 {
 public:
@@ -31,3 +33,5 @@ private:
     TabulatedFunction<float, kSize, Mirror::Odd,  Extend::Clamp> quake_;
     TabulatedFunction<float, kSize, Mirror::Odd,  Extend::Clamp> sinc_;
 };
+
+} // namespace capicola

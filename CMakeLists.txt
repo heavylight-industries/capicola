@@ -12,11 +12,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(ALCHEMY_SDK_DIR "${CMAKE_SOURCE_DIR}/lib/alchemy-sdk")
 list(APPEND CMAKE_MODULE_PATH "${ALCHEMY_SDK_DIR}/cmake")
 
+# Native configure = host test build: compile the header-only DSP core in
+# lib/ with the native toolchain and run the unit tests.  No SDK, no libDaisy,
+# no board.  Firmware images still require the ARM presets.
 if(NOT CMAKE_CROSSCOMPILING)
-    message(FATAL_ERROR
-        "capicola targets the Alchemy Lab V2 board (cross-compile "
-        "only).  Configure with the ARM preset:\n"
-        "    cmake --preset arm && cmake --build --preset arm")
+    enable_testing()
+    add_subdirectory(tests/host)
+    return()
 endif()
 
 if(NOT EXISTS "${ALCHEMY_SDK_DIR}/vendor/libDaisy/CMakeLists.txt")

@@ -2,6 +2,8 @@
 
 #include <SparseLine.h>
 
+namespace capicola {
+
 // A reading cursor over the sparse buffer: the window it sits in, its uniform
 // (sample-time) index, sub-window phase `tau` in [0,1], advance rate, and last
 // value read. The `ideal` cursor (the stretch grid) never populates `result` —
@@ -274,8 +276,8 @@ public:
             temp.index   += temp.speed;
             actual.index += actual.speed;
 
-            // TODO: Blend.h — selectable crossfade shapes.
-            float mixed = (in * splicePhase) + (out * (1.0f - splicePhase));
+            const float w = SmoothStep(splicePhase);
+            float mixed = (in * w) + (out * (1.0f - w));
             splicePhase += (adaptive ? adaptiveIncrement : fixedIncrement) * pitch;
             return mixed;
         }
@@ -292,3 +294,5 @@ public:
         return out;
     }
 };
+
+} // namespace capicola

@@ -4,6 +4,8 @@
 #include <array>
 #include <cstddef>
 
+namespace capicola {
+
 template <typename T, size_t n>
 class Tabulator
 {
@@ -25,3 +27,5 @@ public:
         return TabulatedFunction<T, n, M, E>{table, min, max};
     }
 };
+
+} // namespace capicola

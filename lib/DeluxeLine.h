@@ -4,6 +4,8 @@
 #include <cstddef>
 #include <cmath>
 
+namespace capicola {
+
 struct CubicResult {
     float value;
     float d1;
@@ -47,7 +49,7 @@ public:
     //Direct register access
     inline T Read(float delay = T(1.0)) const noexcept {
         const int delay_int = static_cast<int>(delay);
-        return GetSample(delay_int);
+        return GetSample(writePos - delay_int);
     }
 
     //Linear interpolation
@@ -245,3 +247,5 @@ public:
         return wavelet;
     }
 };
+
+} // namespace capicola

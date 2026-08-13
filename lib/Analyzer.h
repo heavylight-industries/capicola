@@ -5,6 +5,8 @@
 #include <cmath>
 #include <cstdint>
 
+namespace capicola {
+
 // The keyframe writer. Owns the raw input ring and the write head (rawCount, in
 // raw samples), consumes one sample per Analyze(), and sparsifies the stream
 // into a borrowed SparseLine — the medium it shares with the Granule reader.
@@ -89,7 +91,7 @@ public:
         Keyframe* lastFrame = sparse->GetLatest();
         Keyframe kf;
         kf.value = mostRecent.value;
-        kf.time  = (double)rawCount;
+        kf.time  = (rawCount > 0) ? (double)(rawCount - 1) : 0.0;
 
         float valueDiff = std::abs(mostRecent.value - lastFrame->value);
 
@@ -106,7 +108,7 @@ public:
         if (crossedD1 && valueDiff > threshold) {
             // Fractional peak location between the two front-end taps.
             float  alpha = std::abs(older.d1) / (std::abs(older.d1) + std::abs(mostRecent.d1));
-            double index = (double)(rawCount - 1) + alpha;
+            double index = (double)(rawCount - 2) + alpha;
             if (std::abs(index - lastFrame->time) > 1.0) {
                 kf.time  = index;
                 kf.value = raw.ReadBSpline(3.0f - alpha);
@@ -132,9 +134,11 @@ public:
             return false;
         Keyframe kf;
         kf.value = mostRecent.value;
-        kf.time  = (double)rawCount;
+        kf.time  = (rawCount > 0) ? (double)(rawCount - 1) : 0.0;
         sparse->Write(kf);
         sparseCount++;
         return true;
     }
 };
+
+} // namespace capicola

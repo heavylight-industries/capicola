@@ -1,5 +1,4 @@
-#ifndef DETECTOR_H
-#define DETECTOR_H
+#pragma once
 
 #include <cmath>
 #include <cstdint>
@@ -7,7 +6,7 @@
 #include <SparseLine.h>
 #include "filter.h"
 
-namespace AlchemyLabAudio {
+namespace capicola {
 
 // Transient detector: TKEO front end → SVF lowpass → d1 zero-crossing peak
 // picker (rising→falling only, no troughs) over the B-spline-read envelope.
@@ -133,6 +132,4 @@ class Detector {
     }
 };
 
-} // namespace AlchemyLabAudio
-
-#endif /* DETECTOR_H */
+} // namespace capicola
