@@ -643,9 +643,7 @@ static void OnPoll(uint32_t t_ms)
 
     /* TRIG IN (cv[0]) = external slice trigger, always accepted. Rising edge
      * with hysteresis: fire above ~+2 V, re-arm below ~+1 V. Shares the B2
-     * dark-flash so the panel confirms external hits too.
-     * NOTE: this ADC read bench-dead in the jack's previous trig-in life —
-     * the P1 6pm pip mirrors the raw value as the live probe. */
+     * dark-flash so the panel confirms external hits too. */
     {
         static bool trigArmed = true;
         const float trig = (loop.Cv()[0] - 0.5f) * 2.0f;   // bipolar ±1 ≈ ±5 V
@@ -713,8 +711,6 @@ static void OnPoll(uint32_t t_ms)
 /* Always-on layer, drawn last every frame regardless of page:
  *   B1/B2/B3   wear the mode color (blue while the routing view is open);
  *              activity flashes the LED OFF.
- *   P1/P2 6pm  the two input jacks (TRIG IN, CV IN) — green (+) / red (−),
- *              sqrt brightness. P1 doubles as the TRIG IN hardware probe.
  *   P3..P6 6pm the four output jacks (TRIG 1, TRIG 2, ENV 1, ENV 2). The
  *              ENV 1 pip turns red when the input clips. */
 static void OnRender(uint32_t t_ms)
@@ -736,24 +732,7 @@ static void OnRender(uint32_t t_ms)
         for (uint8_t p = 0; p < NUM_POTS; p++)
             DrawRouteRing(p, routing.zone[p]);
 
-    /* P1/P2 pips: the two input jacks (TRIG IN, CV IN), bipolar (green +,
-     * red −). sqrt keeps small voltages visible; kCvPipFloor swallows the
-     * ADC's idle offset so an unpatched jack stays dark and a real signal
-     * fades in from zero. */
-    constexpr float kCvPipFloor = 0.08f;
-    constexpr LedPanel::Rgb kCvPos = {0, 255, 40};    // green
     constexpr LedPanel::Rgb kCvNeg = {255, 10, 0};    // red
-    const float* cvb = loop.Cv();
-    for (uint8_t i = 0; i < 2; i++)
-    {
-        const float v = (cvb[i] - 0.5f) * 2.0f;   // bipolar ±1
-        const float a = ((v >= 0.0f) ? v : -v) - kCvPipFloor;
-        if (a <= 0.0f)
-            continue;
-        hw.leds.SetRingByHour(i, 6.0f, hw.leds.ScaleGlobal(
-            LedPanel::Scale((v >= 0.0f) ? kCvPos : kCvNeg,
-                            std::sqrt(a / (1.0f - kCvPipFloor)))));
-    }
 
     const LedPanel::Rgb w = hw.leds.ScaleGlobal(kWhite);
     if (engine.InGate() || lit) hw.leds.SetRingByHour(2, 6.0f, w);   // B2 press shows too
