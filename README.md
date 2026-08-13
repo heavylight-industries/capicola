@@ -19,7 +19,7 @@ KeyframeRecorder.h is the core method as described in the paper, and is set up n
 pages, buttons, jack map, fixed internals.
 
 ## Examples
-
+![Example](docs/Screenshot From 2026-08-13 14-00-19.png)
 [**Audio examples**](https://heavylight-industries.github.io/time-stretching-examples/)
 — time stretched and pitch shifted recordings with spectrograms, captured
 under real-time control of the parameters.
