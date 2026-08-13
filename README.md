@@ -1,5 +1,5 @@
 # Capicola
-Real-time time stretcher, pitch shifter, transient detector, and envelope follower module built on the Hermetic Modular Alchemy Lab platform. This is the hardware embodiment of my independently authored, peer reviewed DAFx26 paper titled "*Keyframe Time Stretching via Extrema Sampling*". 
+Real-time time stretcher, pitch shifter, transient detector, and envelope follower module built on the Hermetic Modular Alchemy Lab platform. This is the hardware embodiment of my independently authored, peer reviewed DAFx26 paper titled "[*Keyframe Time Stretching via Extrema Sampling*](https://github.com/heavylight-industries/dafx26-paper)". 
 
 The core idea of the module is this: Incoming stereo audio gets stretched out, and in parallel its envelope and transients are extracted. When a transient passes the threshold, it causes the lagging read head to snap to the current time with a short crossfade, where then audio is stretched from the new position. This provides a means of time stretching while staying true to the rhythm of the input. The block diagram is shown below.
 
