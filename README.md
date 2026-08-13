@@ -20,7 +20,7 @@ pages, buttons, jack map, fixed internals.
 
 ## Examples
 
-[**Audio examples**](https://heavylight-industries.github.io/time_stretching_examples/)
+[**Audio examples**](https://heavylight-industries.github.io/time-stretching-examples/)
 — time stretched and pitch shifted recordings with spectrograms, captured
 under real-time control of the parameters.
 
