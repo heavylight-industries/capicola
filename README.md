@@ -3,7 +3,7 @@ Real-time time stretcher, pitch shifter, transient detector, and envelope follow
 
 The core idea of the module is this: Incoming stereo audio gets stretched out, and in parallel its envelope and transients are extracted. When a transient passes the threshold, it causes the lagging read head to snap to the current time with a short crossfade, where then audio is stretched from the new position. This provides a means of time stretching while staying true to the rhythm of the input. The block diagram is shown below.
 
-![Block Diagram](docs/block-diagram.svg)
+![Block Diagram](docs/Capicola Block Diagram.svg)
 
 The input and output envelope followers and their transients don't just live internal to the module. They're always accessible on the CV outputs of the module to trigger and modulate external devices. Each of the performance controls is normalized to the envelope followers, enabling the dynamics of the signal to modulate the controls in real time, leading to some bizarre and creative self patching who's intensity is visualized by animating the LED rings.
 
