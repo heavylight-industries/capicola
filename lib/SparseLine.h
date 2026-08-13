@@ -6,10 +6,12 @@
 
 namespace capicola {
 
-struct Keyframe {
+// 12-byte struct size needs the attribute to not waste SDRAM on padding.
+struct __attribute__((packed, aligned(4))) Keyframe {
     float value;
     double time;
 };
+static_assert(sizeof(Keyframe) == 12, "");
 
 // sparse: count of keyframes (monotonic index space); uniform: sample-time.
 struct Distance {

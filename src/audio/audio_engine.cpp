@@ -14,11 +14,11 @@ namespace AlchemyLabAudio {
 
 using namespace capicola;
 
-/* Two independent keyframe rings in external SDRAM (one per channel). 2^20
- * frames × 16 B ≈ 16 MB each → ~32 MB total, the largest power-of-two pair that
- * fits the 64 MB region with double-precision keyframe time. Globals because the
- * DSY_SDRAM_BSS section attribute cannot apply to a class member. */
-static constexpr int kRingFrames = 1048576;   // 2^20 per channel
+/* Two independent keyframe rings in external SDRAM (one per channel). 2^21
+ * frames × 12 B = 24 MB each → ~48 MB total, sharing the 64 MB region with
+ * HostLink's staging buffers. Globals because the DSY_SDRAM_BSS section
+ * attribute cannot apply to a class member. */
+static constexpr int kRingFrames = 2097152;   // 2^21 per channel
 static KeyframeRecorder<kRingFrames> DSY_SDRAM_BSS sparse_l;
 static KeyframeRecorder<kRingFrames> DSY_SDRAM_BSS sparse_r;
 
