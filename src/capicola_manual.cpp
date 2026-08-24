@@ -49,19 +49,19 @@ static Jack out_r = Jack("out.r", "Out R", JackSig::AudioOut).Short("OUT R");
 
 /* ── Panel buttons (metadata only — main.cpp owns the behavior) ───────── */
 
-static VirtualButton b1 = VirtualButton(kButtonB1, "B1")
+static VirtualButton b1 = VirtualButton(kButtonB1, "Page / Reset")
     .Ident("b1")
     .Role(VirtualButton::Role::Modal)
     .Action("click", "Primary / Depth")
     .Action("hold-b1-b3", "Reset visible page");
 
-static VirtualButton b2 = VirtualButton(kButtonB2, "B2")
+static VirtualButton b2 = VirtualButton(kButtonB2, "Slice / Save")
     .Ident("b2")
     .Role(VirtualButton::Role::Modal)
     .Action("press", "Slice")
     .Action("hold", "Save boot state");
 
-static VirtualButton b3 = VirtualButton(kButtonB3, "B3")
+static VirtualButton b3 = VirtualButton(kButtonB3, "Page")
     .Ident("b3")
     .Role(VirtualButton::Role::Modal)
     .Action("click", "Routing / Secondary");
@@ -78,8 +78,8 @@ extern const char* const kRouteFieldId[6] = {
 };
 
 extern const char* const kRouteFieldName[6] = {
-    "P1 Source", "P2 Source", "P3 Source",
-    "P4 Source", "P5 Source", "P6 Source",
+    "Pitch Source",    "Stretch Source", "Threshold Source",
+    "Grain Size Source", "Quality Source", "Feedback Source",
 };
 
 extern const VirtualKnob* const kRouteSeeKnob[6] = {

@@ -214,22 +214,22 @@ static void DrawDepthGlow(LedPanel& panel, uint8_t pot, const ArcGeometry&,
     }
 }
 
-VirtualKnob cvDepth1 = VirtualKnob(0, "P1 Depth")
+VirtualKnob cvDepth1 = VirtualKnob(0, "Pitch Mod")
     .Ident("depth.p1")
     .Linear(-1.f, +1.f).Ring(Bipolar(kPink, kOrange, kCenter)).Overdraw(DrawDepthGlow);
-VirtualKnob cvDepth2 = VirtualKnob(1, "P2 Depth")
+VirtualKnob cvDepth2 = VirtualKnob(1, "Stretch Mod")
     .Ident("depth.p2")
     .Linear(-1.f, +1.f).Ring(Bipolar(kPink, kOrange, kCenter)).Overdraw(DrawDepthGlow);
-VirtualKnob cvDepth3 = VirtualKnob(2, "P3 Depth")
+VirtualKnob cvDepth3 = VirtualKnob(2, "Threshold Mod")
     .Ident("depth.p3")
     .Linear(-1.f, +1.f).Ring(Bipolar(kPink, kOrange, kCenter)).Overdraw(DrawDepthGlow);
-VirtualKnob cvDepth4 = VirtualKnob(3, "P4 Depth")
+VirtualKnob cvDepth4 = VirtualKnob(3, "Grain Size Mod")
     .Ident("depth.p4")
     .Linear(-1.f, +1.f).Ring(Bipolar(kPink, kOrange, kCenter)).Overdraw(DrawDepthGlow);
-VirtualKnob cvDepth5 = VirtualKnob(4, "P5 Depth")
+VirtualKnob cvDepth5 = VirtualKnob(4, "Quality Mod")
     .Ident("depth.p5")
     .Linear(-1.f, +1.f).Ring(Bipolar(kPink, kOrange, kCenter)).Overdraw(DrawDepthGlow);
-VirtualKnob cvDepth6 = VirtualKnob(5, "P6 Depth")
+VirtualKnob cvDepth6 = VirtualKnob(5, "Feedback Mod")
     .Ident("depth.p6")
     .Linear(-1.f, +1.f).Ring(Bipolar(kPink, kOrange, kCenter)).Overdraw(DrawDepthGlow);
 
@@ -293,7 +293,9 @@ class RoutingStore : public Serializable
      * live in capicola_manual.cpp with the rest of the manual. */
     bool Describe(hostlink::ComponentWriter& w) const override
     {
-        w.Ident("routing").Label("Mod Routing").Grid(1, NUM_POTS);
+        static const char* const kRoutingPage[1] = {"Mod Routing"};
+        w.Ident("routing").Kind("settings").Label("Mod Routing").Grid(1, NUM_POTS);
+        w.PageMeta(kRoutingPage, nullptr, 1);
         for (uint8_t p = 0; p < NUM_POTS; p++)
         {
             const SeeRef see[1] = {SeeRef(*kRouteSeeKnob[p])};
@@ -486,7 +488,9 @@ class SecondaryStore : public Serializable
      * live write from the host takes effect on the next frame. */
     bool Describe(hostlink::ComponentWriter& w) const override
     {
-        w.Ident("secondary").Label("Secondary").Grid(1, NUM_POTS);
+        static const char* const kSecondaryPage[1] = {"Secondary"};
+        w.Ident("secondary").Kind("settings").Label("Secondary").Grid(1, NUM_POTS);
+        w.PageMeta(kSecondaryPage, nullptr, 1);
         for (uint8_t p = 0; p < NUM_POTS; p++)
             if (!w.Field(kSecFieldId[p], kSecFieldName[p],
                          p * (uint32_t)sizeof(float),
