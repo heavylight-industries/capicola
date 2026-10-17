@@ -76,36 +76,65 @@ const names = (name, texts) => out.push(
 
 const V = M.VIEWS, G = id => V.gestures.items.find(it => it.id === id);
 
+/* An entry's text for the programmer: its body, then its facts rows as a list
+ * — hold times, pulse widths, pips, detents: details the programmer can't
+ * derive. Rows it already shows are skipped: a knob field's Range and Default
+ * come from its declaration, a jack's Range from its signal type. */
+const KNOB_SKIP = ["Range", "Default"], OTHER_SKIP = ["Range"];
+function full(entry, skip = OTHER_SKIP) {
+  const rows = (entry.facts || []).filter(([k]) => !skip.includes(k));
+  if (!rows.length) return entry.body;
+  return entry.body + "<ul>" +
+    rows.map(([k, v]) => `<li><strong>${k}:</strong> ${v}</li>`).join("") + "</ul>";
+}
+const knob = k => full(k, KNOB_SKIP);
+
 one("kTagline", M.TAGLINE);
 one("kPreamble", M.PREAMBLE);
 out.push("/* Pages with a firmware Page object */");
 one("kPrimaryPage", V.perf.overview);
 one("kDepthPage", V.depth.overview);
-many("kPrimaryKnob", V.perf.knobs.map(k => k.body));
-many("kDepthKnob", V.depth.knobs.map(k => k.body));
+names("kPrimaryName", V.perf.knobs.map(k => k.l));
+many("kPrimaryKnob", V.perf.knobs.map(knob));
+names("kDepthName", V.depth.knobs.map(k => k.l));
+many("kDepthKnob", V.depth.knobs.map(knob));
 out.push("/* Routing and Secondary are preset components: per-field names and help */");
 names("kRouteName", V.routing.knobs.map(k => k.l));
-many("kRouteHelp", V.routing.knobs.map(k => k.body));
+many("kRouteHelp", V.routing.knobs.map(knob));
 names("kSecName", V.secondary.knobs.map(k => k.l));
-many("kSecHelp", V.secondary.knobs.map(k => k.body));
-out.push("/* Manual sections: the overviews with no entity to hang on, and the two\n" +
+many("kSecHelp", V.secondary.knobs.map(knob));
+out.push("/* Manual sections: the overviews with no entity to hang on, and the\n" +
          " * gestures that belong to no button. */");
 one("kRoutingOverview", V.routing.overview);
 one("kSecondaryOverview", V.secondary.overview);
+/* The same overviews as ready-made "pageHelp" JSON arrays, for the two
+ * settings components' "About this page". */
+const pageHelp = (name, html) => out.push(
+  `inline constexpr const char* ${name} =\n${lit(JSON.stringify([md(html)]))};\n`);
+pageHelp("kRoutingPageHelpJson", V.routing.overview);
+pageHelp("kSecondaryPageHelpJson", V.secondary.overview);
 one("kGesturesOverview", V.gestures.overview);
-one("kPotCatch", G("catch").body);
-one("kSlicing", G("slice").body);
+one("kPotCatch", full(G("catch")));
+one("kSlicing", full(G("slice")));
+one("kReadingPanel", full(G("panel")));
 out.push("/* Buttons, jacks (panel grid order: top row L→R, then bottom row) */");
+/* Buttons: name and one sentence. The programmer lists each button's gestures
+ * as chips, so the facts would only repeat them. */
+names("kButtonName", M.BUTTONS.map(b => b.l));
 many("kButton", M.BUTTONS.map(b => b.body));
 /* Each button's first facts row is its plain press ("Click" / "Tap"). */
 many("kButtonTap", M.BUTTONS.map(b => b.facts[0][1]));
-many("kJack", M.JACKS.map(j => j.body));
+many("kJack", M.JACKS.map(j => full(j)));
 out.push("/* Button gestures */");
-one("kGestureReset", G("reset").body);
-one("kGestureSave", G("save").body);
-one("kGestureLoad", G("load").body);
-one("kGestureFlip", G("pingpong").body);
-one("kGestureSnap", G("snap").body);
+/* A gesture chip gets its first paragraph and its facts. The longer paragraphs
+ * — the save history, the snap target — are the presets help and the Options
+ * help in the programmer already. */
+const chip = g => full({ body: g.body.split("</p>")[0] + "</p>", facts: g.facts });
+one("kGestureReset", chip(G("reset")));
+one("kGestureSave", chip(G("save")));
+one("kGestureLoad", chip(G("load")));
+one("kGestureFlip", chip(G("pingpong")));
+one("kGestureSnap", chip(G("snap")));
 out.push("/* Shared paragraphs: the presets panel and the Options fields */");
 one("kHistory", M.HISTORY);
 one("kSnapTarget", M.SNAP_TARGET);

@@ -193,7 +193,7 @@
   <header class="mast">
     <h1>Capicola<span>.</span></h1>
     <div class="sub" id="sub"></div>
-    <div class="fw">Firmware 1.1</div>
+    <div class="fw">Firmware 1.2</div>
   </header>
 
   <p class="preamble" id="preamble"></p>
@@ -45785,36 +45785,24 @@ Time Stretching via Extrema Sampling</a> (DAFx26).`;
 
 /* ─── Buttons and jacks — the same on every page ────────────────────── */
 const BUTTONS = [
-  { l: "B1", kicker: "Button · page group 1",
+  { l: "Page", kicker: "B1 · page group 1",
     facts: [["Click", "Primary ↔ Depth, on release"], ["+ B2, 0.33 s", "Save"],
             ["+ B3, 0.5 s", "Factory reset, all pages"]],
-    body: `<p>Rotates between the two primary pages, the warm-colored ones. If the
-      module is showing a B3 page, the first press jumps back to whichever of
-      Primary or Depth you left; the next press advances.</p>
-      <p>B1 is also half of two chords: with B2 it saves, with B3 it takes every page
-      back to factory.</p>`,
+    body: `<p>Steps between the Primary and Depth pages. From a B3 page, the first press
+      returns to whichever you left.</p>`,
     see: ["gestures:save", "gestures:reset", "b2"] },
-  { l: "B2", kicker: "Button · slice",
+  { l: "Slice / Flip", kicker: "B2",
     facts: [["Tap", "Slice both channels, on release"], ["Hold 0.1 s", "Polarity flip on P1 / P2"],
             ["+ B3, 0.5 s", "Load"], ["Light", "Blinks dark on every slice"]],
-    body: `<p><strong>Tap</strong> to fire a slice: both read heads jump to the current
-      moment with a crossfade. It fires as the button comes up, so a quick tap feels
-      instant, and it works even when ${L("perf:2", "P3")} is at the top and auto-slicing is muted.
-      Pressed as part of a chord, it never slices.</p>
-      <p><strong>Hold</strong> past a tenth of a second and P1/P2 become direction controls.
-      If the hold flipped anything, the release doesn't slice. If it didn't, it slices
-      like a slow tap.</p>`,
+    body: `<p>Tap to slice; it fires on release, and never as part of a chord. Hold it to
+      flip Pitch or Stretch.</p>`,
     see: ["gestures:slice", "gestures:pingpong", "gestures:load"] },
-  { l: "B3", kicker: "Button · page group 2 · shift",
+  { l: "Page / Shift", kicker: "B3 · page group 2",
     facts: [["Click", "Routing ↔ Secondary, on release"],
             ["Hold 0.1 s + nudge", "Shift: snap any knob to its target and back"],
             ["+ B2, 0.5 s", "Load"], ["+ B1, 0.5 s", "Factory reset, all pages"]],
-    body: `<p>Rotates between the two secondary pages, the cool-colored ones. Like B1,
-      the first press from the other group jumps back to where this group was left.
-      The page changes on release.</p>
-      <p><strong>Hold</strong> it, as printed, for SHIFT: every knob on the page holds still
-      and toggles between where it was and its snap target. If the hold snapped anything,
-      the release doesn't change the page.</p>`,
+    body: `<p>Steps between the Routing and Secondary pages. Hold it for SHIFT, to snap
+      knobs to their targets.</p>`,
     see: ["gestures:snap", "gestures:load", "b1"] },
 ];
 
@@ -45973,7 +45961,7 @@ const VIEWS = {
         body: `<p>Modulation depth for ${L("perf:1", "Stretch")}. Pushing it through noon passes through
           freeze into the opposite direction.</p>`,
         see: ["perf:1", "routing:1"] },
-      { l: "Threshold Mod Depth", ring: bipolar(0.45, C.pink, C.orange),
+      { l: "Thresh. Mod Depth", ring: bipolar(0.45, C.pink, C.orange),
         facts: [["Range", "−1 … +1"], ["Default", "Noon (off)"]],
         body: `<p>Modulation depth for ${L("perf:2", "Threshold")}.</p>`,
         see: ["perf:2", "routing:2"] },
@@ -46013,7 +46001,7 @@ const VIEWS = {
       pushes is set on the ${L("depth:", "Depth")} page.</p>
       <p>${JACK_MODE}</p>`,
     knobs: ["Pitch", "Stretch", "Threshold", "Grain Size", "Quality", "Feedback"].map((t, i) => ({
-      l: `${t} Mod Source`, ring: zones(0),
+      l: `${t === "Threshold" ? "Thresh." : t} Mod Source`, ring: zones(0),   /* fits the programmer */
       facts: [["Zones", "In Env · Out Env · CV In, + CV 2 · CV 3 with the jacks as inputs"],
               ["Default", "In Env"]],
       body: `<p>Modulation source for ${L(`perf:${i}`, t)}.</p>` + [
@@ -46086,7 +46074,16 @@ const VIEWS = {
     buttons: [null, null, null],
     legend: [],
     overview: `<p>A small set of button moves for saving, loading, flipping direction and
-      snapping knobs home. Each works the same on every page.</p>`,
+      snapping knobs home, and how the panel's lights answer them. Each works the same on
+      every page.</p>
+      <ul>
+        <li>${L("gestures:save", "<strong>Save</strong>")}: hold B1 + B2 for 0.33 s</li>
+        <li>${L("gestures:load", "<strong>Load</strong>")}: hold B2 + B3 for 0.5 s</li>
+        <li>${L("gestures:reset", "<strong>Factory reset</strong>")}: hold B1 + B3 for 0.5 s</li>
+        <li>${L("gestures:pingpong", "<strong>Polarity flip</strong>")}: hold B2, nudge Pitch or Stretch</li>
+        <li>${L("gestures:snap", "<strong>Shift snap</strong>")}: hold B3, nudge any knob</li>
+        <li>${L("gestures:slice", "<strong>Slice</strong>")}: tap B2; it fires on release</li>
+      </ul>`,
     items: [
       { id: "reset", l: "Factory Reset", lit: { b: [0, 2] },
         facts: [["Gesture", "Hold B1 + B3 for 0.5 s"], ["Affects", "All four pages"],
@@ -46142,6 +46139,18 @@ const VIEWS = {
           the top of ${L("perf:2", "P3")}. Kept detector events are at least 150 ms apart, and nothing splices
           faster than one fade.</p>`,
         see: ["perf:2", "b2", "j:1", "j:2", "secondary:1"] },
+      { id: "panel", l: "Reading the Panel", lit: { k: [2, 3, 4, 5] },
+        facts: [["P3 pip", "Slice triggers"], ["P4 pip", "Output triggers"],
+                ["P5 pip", "Input envelope; red on input clip"], ["P6 pip", "Output envelope"],
+                ["Slice", "B2 blinks dark"], ["Save, load, reset", "Three white flashes on all three buttons"]],
+        body: `<p>All three buttons wear the visible page's color, so activity reads against it:
+          B2 blinks dark on every slice, and a ${L("gestures:save", "save")},
+          ${L("gestures:load", "load")} or ${L("gestures:reset", "factory reset")} confirms with
+          three bright white flashes on all three buttons.</p>
+          <p>The pips at six o'clock under P3–P6 always show the four followers, on every page
+          and whatever the jacks are set to carry. The trigger pips hold for 60 ms, so a 10 ms
+          pulse is easy to see.</p>`,
+        see: ["gestures:slice", "j:2", "j:3"] },
     ],
   },
 };

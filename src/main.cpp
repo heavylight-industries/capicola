@@ -87,6 +87,7 @@
 #include "hardware.h"
 #include "git_stamp.h"                   /* CAPICOLA_GIT_HASH, per build */
 #include "jack_routing.h"                /* which signal drives which CV jack */
+#include "capicola_manual_text.h"        /* knob names — generated from docs/manual.html */
 #include "audio_engine.h"
 
 using namespace alchemy;
@@ -355,7 +356,7 @@ static void DrawGestureRing(LedPanel& panel, uint8_t pot, const ArcGeometry& arc
     f.Emit(panel, pot, g.view);
 }
 
-VirtualKnob pitch = VirtualKnob(0, "Pitch")
+VirtualKnob pitch = VirtualKnob(0, manual_text::kPrimaryName[0])
     .Ident("perf.pitch")
     .Unit("x")
     .Linear(-kPitchMax, +kPitchMax)
@@ -378,9 +379,11 @@ static float PitchNormFor(float mag, bool rev)
     return rev ? (0.5f - 0.5f * a) : (0.5f + 0.5f * a);
 }
 
-VirtualKnob stretch = VirtualKnob(1, "Stretch")
+VirtualKnob stretch = VirtualKnob(1, manual_text::kPrimaryName[1])
     .Ident("perf.stretch")
     .Linear(0.0f, 1.0f)
+    /* Direction, not a percent: noon is freeze. */
+    .Disp("{\"kind\":\"bipolar\",\"neg\":\"Reverse\",\"pos\":\"Forward\",\"center\":\"Freeze\"}")
     .Ring(Custom(DrawGestureRing, &stretchG));  // gesture-aware bipolar arc
 
 /* Stretch taper, bipolar: a TRUE FREEZE at noon, realtime forward at the CW
@@ -406,17 +409,17 @@ static float StretchNormFor(float mag, bool rev)
     return rev ? (0.5f - 0.5f * a) : (0.5f + 0.5f * a);
 }
 
-VirtualKnob threshold = VirtualKnob(2, "Threshold")
+VirtualKnob threshold = VirtualKnob(2, manual_text::kPrimaryName[2])
     .Ident("perf.threshold")
     .Linear(0.0f, 1.0f)
     .Ring(Level(kOrange));
 
-VirtualKnob grainSize = VirtualKnob(3, "Grain Size")
+VirtualKnob grainSize = VirtualKnob(3, manual_text::kPrimaryName[3])
     .Ident("perf.grain")
     .Linear(32.f, 4096.f)
     .Ring(Level(kOrange));
 
-VirtualKnob quality = VirtualKnob(4, "Quality")
+VirtualKnob quality = VirtualKnob(4, manual_text::kPrimaryName[4])
     .Ident("perf.quality")
     /* ε 0.08..0.001. 0.1 was a bit much at the CCW end and 0.03 was not
      * crunchy enough; 0.08 sits between them. */
@@ -426,7 +429,7 @@ VirtualKnob quality = VirtualKnob(4, "Quality")
     .Disp("{\"kind\":\"norm\"}")
     .Ring(Level(kOrange));
 
-VirtualKnob feedback = VirtualKnob(5, "Feedback")
+VirtualKnob feedback = VirtualKnob(5, manual_text::kPrimaryName[5])
     .Ident("perf.feedback")
     .Linear(0.f, 1.5f)
     .Ring(Level(kOrange, FillAnim::Pulse));
@@ -448,22 +451,22 @@ static void DrawDepthGlow(LedPanel& panel, uint8_t pot, const ArcGeometry&,
     }
 }
 
-VirtualKnob cvDepth1 = VirtualKnob(0, "P1 Depth")
+VirtualKnob cvDepth1 = VirtualKnob(0, manual_text::kDepthName[0])
     .Ident("depth.p1")
     .Linear(-1.f, +1.f).Ring(Bipolar(kPink, kOrange, kCenter)).Overdraw(DrawDepthGlow);
-VirtualKnob cvDepth2 = VirtualKnob(1, "P2 Depth")
+VirtualKnob cvDepth2 = VirtualKnob(1, manual_text::kDepthName[1])
     .Ident("depth.p2")
     .Linear(-1.f, +1.f).Ring(Bipolar(kPink, kOrange, kCenter)).Overdraw(DrawDepthGlow);
-VirtualKnob cvDepth3 = VirtualKnob(2, "P3 Depth")
+VirtualKnob cvDepth3 = VirtualKnob(2, manual_text::kDepthName[2])
     .Ident("depth.p3")
     .Linear(-1.f, +1.f).Ring(Bipolar(kPink, kOrange, kCenter)).Overdraw(DrawDepthGlow);
-VirtualKnob cvDepth4 = VirtualKnob(3, "P4 Depth")
+VirtualKnob cvDepth4 = VirtualKnob(3, manual_text::kDepthName[3])
     .Ident("depth.p4")
     .Linear(-1.f, +1.f).Ring(Bipolar(kPink, kOrange, kCenter)).Overdraw(DrawDepthGlow);
-VirtualKnob cvDepth5 = VirtualKnob(4, "P5 Depth")
+VirtualKnob cvDepth5 = VirtualKnob(4, manual_text::kDepthName[4])
     .Ident("depth.p5")
     .Linear(-1.f, +1.f).Ring(Bipolar(kPink, kOrange, kCenter)).Overdraw(DrawDepthGlow);
-VirtualKnob cvDepth6 = VirtualKnob(5, "P6 Depth")
+VirtualKnob cvDepth6 = VirtualKnob(5, manual_text::kDepthName[5])
     .Ident("depth.p6")
     .Linear(-1.f, +1.f).Ring(Bipolar(kPink, kOrange, kCenter)).Overdraw(DrawDepthGlow);
 
@@ -546,7 +549,13 @@ class RoutingStore : public Serializable
      * live in capicola_manual.cpp with the rest of the manual. */
     bool Describe(hostlink::ComponentWriter& w) const override
     {
-        w.Ident("routing").Label("Mod Routing").Grid(1, NUM_POTS);
+        /* A settings page, so the programmer draws it on the panel like the
+         * pager's pages, in the page's own color. */
+        static const char* const kPage [1] = {"Mod Routing"};
+        static const char* const kColor[1] = {"#1e6eff"};   // kBlue
+        w.Ident("routing").Kind("settings").Label("Mod Routing").Grid(1, NUM_POTS);
+        w.PageMeta(kPage, kColor, 1);
+        w.Meta("pageHelp", manual_text::kRoutingPageHelpJson);   // "About this page"
         for (uint8_t p = 0; p < NUM_POTS; p++)
         {
             const SeeRef see[1] = {SeeRef(*kRouteSeeKnob[p])};
@@ -606,9 +615,9 @@ static void DrawRouteRing(uint8_t pot, uint8_t sel, float level)
     }
 }
 
-Page perfPage  = Page(0).Name("Primary").Knobs(pitch, stretch, threshold,
+Page perfPage  = Page(0).Name("Primary").Color("#ff6e0f").Knobs(pitch, stretch, threshold,
                                       grainSize, quality, feedback);
-Page depthPage = Page(1).Name("Depth").Knobs(cvDepth1, cvDepth2, cvDepth3,
+Page depthPage = Page(1).Name("Depth").Color("#ff3c96").Knobs(cvDepth1, cvDepth2, cvDepth3,
                                       cvDepth4, cvDepth5, cvDepth6);
 
 /* ── Surfaces ────────────────────────────────────────────────────────── */
@@ -624,8 +633,17 @@ static Presets presets(hw.seed.qspi);
 #ifndef CAPICOLA_BENCH_LOG
 /* Browser/CLI preset editor over the front-panel USB CDC (SDK default
  * transport). Identity strings are literals — kept by reference. */
+/* The descriptor carries the whole manual — every control's help with its
+ * facts — which outgrew the SDK's default 24 KiB. SDRAM has room to spare;
+ * the HELLO length field is 32-bit. */
+static char DSY_SDRAM_BSS hostDescriptor[64 * 1024];
+static char DSY_SDRAM_BSS hostRefresh   [64 * 1024];   // a refresh rebuilds into this
+
+/* capicola_manual.cpp — republish the jacks for the current jack options. */
+void DescribeJacks(hostlink::Host& host, const jacks::Options& o);
+
 hostlink::Host host(presets, "capicola", "Capicola",
-                           "1.1.0", CAPICOLA_GIT_HASH);
+                           "1.2.0", CAPICOLA_GIT_HASH);
 
 /* src/capicola_manual.cpp — attaches the firmware-authored manual (prose,
  * jacks, buttons) to the descriptor. Called before BootLoad() brings USB up. */
@@ -767,13 +785,29 @@ class SecondaryStore : public Serializable
      * live write from the host takes effect on the next frame. */
     bool Describe(hostlink::ComponentWriter& w) const override
     {
-        w.Ident("secondary").Label("Secondary").Grid(1, NUM_POTS);
+        static const char* const kPage [1] = {"Secondary"};
+        static const char* const kColor[1] = {"#00dcc8"};   // kTeal
+        w.Ident("secondary").Kind("settings").Label("Secondary").Grid(1, NUM_POTS);
+        w.PageMeta(kPage, kColor, 1);
+        w.Meta("pageHelp", manual_text::kSecondaryPageHelpJson);   // "About this page"
+        /* Cross-links: smoothing shapes what threshold sees, drive and
+         * character are one shaper, fb tone voices feedback, mix feeds the
+         * outputs. */
+        static const SeeRef kSee[NUM_POTS][2] = {
+            {SeeRef(threshold), SeeRef()},
+            {SeeRef(), SeeRef()},
+            {SeeRef("sec.character"), SeeRef()},
+            {SeeRef("sec.drive"), SeeRef()},
+            {SeeRef("out.l"), SeeRef("out.r")},
+            {SeeRef(feedback), SeeRef()},
+        };
+        static constexpr uint8_t kNumSee[NUM_POTS] = {1, 0, 1, 1, 2, 1};
         for (uint8_t p = 0; p < NUM_POTS; p++)
             if (!w.Field(kSecFieldId[p], kSecFieldName[p],
                          p * (uint32_t)sizeof(float),
                          hostlink::FieldType::F32, kSecDefault[p],
                          kSecFieldDisp[p], 0u, 0, (int16_t)p,
-                         kSecFieldHelp[p]))
+                         kSecFieldHelp[p], kNumSee[p] ? kSee[p] : nullptr, kNumSee[p]))
                 return false;
         return true;
     }
@@ -826,17 +860,22 @@ class OptionsStore : public Serializable
     bool Describe(hostlink::ComponentWriter& w) const override
     {
         w.Ident("options").Label("Options");
+        /* Each option links to what it acts on; the jacks link back. */
+        static const SeeRef kSnapSee [2] = {SeeRef("b3"), SeeRef("presets")};
+        static const SeeRef kJacksSee[2] = {SeeRef("trig.1"), SeeRef("env.1")};
+        static const SeeRef kTrig2See[2] = {SeeRef("trig.2"), SeeRef("opt.jacks")};
+        static const SeeRef kEnv2See [2] = {SeeRef("env.2"), SeeRef("opt.jacks")};
         return w.Field(kOptSnapId, kOptSnapName, 0, hostlink::FieldType::Enum,
-                       0.0f, kOptSnapDisp, 2u, -1, -1, kOptSnapHelp)
+                       0.0f, kOptSnapDisp, 2u, -1, -1, kOptSnapHelp, kSnapSee, 2)
             && w.Field(kOptJacksId, kOptJacksName, 1, hostlink::FieldType::Enum,
                        jacks::Options{}.cvIn ? 1.0f : 0.0f, kOptJacksDisp, 2u,
-                       -1, -1, kOptJacksHelp)
+                       -1, -1, kOptJacksHelp, kJacksSee, 2)
             && w.Field(kOptTrig2Id, kOptTrig2Name, 2, hostlink::FieldType::Enum,
                        (float)jacks::Options{}.trig2, kOptOutDisp, jacks::kNumSignals,
-                       -1, -1, kOptOutsHelp)
+                       -1, -1, kOptOutsHelp, kTrig2See, 2)
             && w.Field(kOptEnv2Id, kOptEnv2Name, 3, hostlink::FieldType::Enum,
                        (float)jacks::Options{}.env2, kOptOutDisp, jacks::kNumSignals,
-                       -1, -1, kOptOutsHelp);
+                       -1, -1, kOptOutsHelp, kEnv2See, 2);
     }
 #endif
 };
@@ -1458,6 +1497,21 @@ static void OnPoll(uint32_t t_ms)
         for (float& w : written) w = -1.0f;
     }
 
+#ifndef CAPICOLA_BENCH_LOG
+    /* The programmer names each jack by its current role: republish the jacks
+     * and refresh the descriptor whenever the jack options change. */
+    {
+        static jacks::Options described;   // DescribeManual published the factory roles
+        if (jackOpts.cvIn != described.cvIn || jackOpts.trig2 != described.trig2
+            || jackOpts.env2 != described.env2)
+        {
+            described = jackOpts;
+            DescribeJacks(host, jackOpts);
+            host.RequestDescriptorRefresh();
+        }
+    }
+#endif
+
     /* TRIG 1 = every slice the engine actually took (auto-detected, B2 and TRIG
      * IN alike); TRIG 2 = the output follower's kept transients. Which jack
      * carries which is jacks::Route's call. */
@@ -1600,6 +1654,8 @@ int main(void) {
         .OnPoll(OnPoll)
         .OnRender(OnRender);
 #ifndef CAPICOLA_BENCH_LOG
+    host.DescriptorBuffer(hostDescriptor, sizeof(hostDescriptor))
+        .DescriptorRefreshBuffer(hostRefresh, sizeof(hostRefresh));
     DescribeManual(host);
     loop.Use(host);   /* descriptor + USB come up inside BootLoad() */
 #endif

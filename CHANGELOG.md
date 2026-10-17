@@ -4,6 +4,59 @@ All notable changes to Capicola. Versions follow [semver](https://semver.org);
 the version string lives in `src/main.cpp` and is stamped into the HostLink
 descriptor, so what the programmer reports is always what is running.
 
+## [1.2.0] — 2026-10-15
+
+Alchemy SDK 0.12, and a web programmer that describes the module properly.
+Presets from 1.1.0 load as they are.
+
+### Changed
+
+- **Alchemy SDK 0.10.0 → 0.12.0.** What you'll notice:
+  - **Smoother knobs.** Every pot runs through a 20 Hz filter, and a knob that
+    has caught holds its value exactly until it moves, so values no longer
+    drift with ADC noise.
+  - **Stricter CV calibration checks.** A stored calibration for the CV jacks
+    that fails the new checks is not used, and the jacks fall back to nominal
+    scaling until the module is recalibrated.
+  - **The programmer names each jack by its current role.** Switch Trig 1 /
+    Env 1 to Outputs, or reassign Trig 2 / Env 2, and the programmer updates
+    — the descriptor now refreshes at runtime.
+- **Controls are named for what they are.** The buttons are "Page",
+  "Slice / Flip" and "Page / Shift" instead of B1–B3; the Depth knobs are
+  "Pitch Mod Depth" and so on, the routing fields "Pitch Mod Source" and so on
+  ("Thresh." where "Threshold" ran off the edge); while Trig 1 and Env 1 are
+  inputs they are "CV 2 / Trig 1" and "CV 3 / Env 1", ±5 V, with the printed
+  names kept as their panel labels. Knob and button names now come from the
+  manual like its text.
+- **Every page has its color and its "About this page".** Mod Routing and
+  Secondary are settings pages in the programmer, drawn on the panel, and carry
+  their overview as page help; Primary and Depth now emit their orange and pink
+  instead of falling back to gold.
+- **Stretch reads as a direction:** Reverse / Freeze / Forward instead of a
+  percent.
+- **Cross-links where settings meet:** each option links to what it acts on
+  (Shift Snap Target → B3 and presets, the jack options → their jacks) and the
+  jacks link back; Smoothing → Threshold, Drive ↔ Character, Feedback Tone →
+  Feedback, Mix → the outputs.
+- **The Guide's Gestures section lists the gestures** — save, load, factory
+  reset, polarity flip, Shift snap, slice — with their buttons and hold times.
+- **The programmer's help text carries the details again** — hold times, pulse
+  widths, pip assignments, detents, the jack defaults — appended from the
+  manual's facts tables, which 1.1.0 kept on the manual page only.
+- **The Buttons section is leaner.** One sentence per button; each gesture shows
+  its first paragraph and its facts, since the save history and the snap target
+  already have their own help in the programmer.
+- **"Reading the Panel" is back** in the manual's Gestures tab and the
+  programmer's guide: the page-colored buttons, B2's dark blink on a slice, the
+  white confirm flashes, and the 6pm pips always showing the four followers.
+- **The description sent to the programmer gets a 64 KiB buffer**, and its
+  runtime refresh a 64 KiB workspace. With the full manual on board it is
+  about 24.7 KB, just past the SDK's 24 KiB default — which would leave the
+  programmer with an empty module.
+
+Thanks to Luke at Hermetic for PR #1, which these changes carry forward onto 1.1,
+and for SDK 0.12.
+
 ## [1.1.0] — 2026-10-08
 
 ### Added

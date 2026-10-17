@@ -34,11 +34,21 @@ inline constexpr const char* kDepthPage =
     "exactly zero; nudge it back to return.** B1+B3 returns every page to "
     "factory, every depth included.";
 
+inline constexpr const char* kPrimaryName[6] = {
+    "Pitch",
+    "Stretch",
+    "Threshold",
+    "Grain Size",
+    "Quality",
+    "Feedback",
+};
+
 inline constexpr const char* kPrimaryKnob[6] = {
     "Grain playback speed and direction. It is decoupled from time: the "
     "stretch clock keeps its own rate. CW of noon the grains play "
     "**forward**, CCW they play **backward**, up to 2× either way. Noon "
-    "stops the head; near noon is just very slow.",
+    "stops the head; near noon is just very slow.\n\n- **Noon:** Stop\n- "
+    "**Unity:** At ¼ and ¾, held by a ±0.03× detent",
     "Playback rate of the keyframe grid. At noon the grid **stops** "
     "instead of crawling. CW runs it forward up to realtime, CCW runs it "
     "**backward** up to realtime reverse.\n\n**Running out of "
@@ -47,10 +57,13 @@ inline constexpr const char* kPrimaryKnob[6] = {
     "full-rate stereo audio. Only extrema are kept, so in practice it "
     "holds minutes, and longer at low Quality. If a freeze or a reverse "
     "leaves the grid behind the oldest keyframe, it jumps back to now "
-    "with a full crossfade rather than a click.",
+    "with a full crossfade rather than a click.\n\n- **Noon:** True "
+    "freeze\n- **Taper:** |u|^2.5 each side; ¾ ≈ 5.7× slower",
     "How readily a transient triggers a slice. Lower is more sensitive "
     "and slices more often; higher slices less. At the very top, "
-    "auto-slicing is off, and only B2 or Trig In slices.",
+    "auto-slicing is off, and only B2 or Trig In slices.\n\n- **CCW:** "
+    "Most sensitive: the most slices\n- **CW:** Fewer slices\n- **Top:** "
+    "Auto-slicing off\n- **Pip:** Mirrors Trig 1",
     "How long a grain plays before the head is spliced on: the summed "
     "duration of the next N keyframes, where N is the grain size. It "
     "counts keyframes, not time, so dense material gives short grains and "
@@ -60,13 +73,23 @@ inline constexpr const char* kPrimaryKnob[6] = {
     "keeps nearly every extremum; CCW keeps fewer, making the "
     "representation sparser and, in turn, crunchier and more "
     "lo-fi.\n\nFewer keyframes also means a longer buffer and longer "
-    "freeze times.",
+    "freeze times.\n\n- **Pip:** Mirrors Env 1; red on input clip",
     "The output is fed back into the input, through a saturator and a "
     "tunable state-variable bandpass on the way.\n\nFeedback only bites "
     "near *now*: right after a slice, while the read head is close to the "
     "live input. The further a head lags behind now, the less influence "
     "the feedback has. The tap sits before the mix, so turning Mix down "
-    "doesn't starve the loop.",
+    "doesn't starve the loop.\n\n- **Unity:** At ⅔ of the sweep\n- "
+    "**Pip:** Mirrors Env 2",
+};
+
+inline constexpr const char* kDepthName[6] = {
+    "Pitch Mod Depth",
+    "Stretch Mod Depth",
+    "Thresh. Mod Depth",
+    "Grain Mod Depth",
+    "Quality Mod Depth",
+    "Feedback Mod Depth",
 };
 
 inline constexpr const char* kDepthKnob[6] = {
@@ -84,7 +107,7 @@ inline constexpr const char* kDepthKnob[6] = {
 inline constexpr const char* kRouteName[6] = {
     "Pitch Mod Source",
     "Stretch Mod Source",
-    "Threshold Mod Source",
+    "Thresh. Mod Source",
     "Grain Size Mod Source",
     "Quality Mod Source",
     "Feedback Mod Source",
@@ -92,15 +115,22 @@ inline constexpr const char* kRouteName[6] = {
 
 inline constexpr const char* kRouteHelp[6] = {
     "Modulation source for Pitch.\n\nPitch is bipolar, so the bipolar CV "
-    "In can sweep it through noon in both directions.",
+    "In can sweep it through noon in both directions.\n\n- **Zones:** In "
+    "Env · Out Env · CV In, + CV 2 · CV 3 with the jacks as inputs",
     "Modulation source for Stretch.\n\nStretch is bipolar, so the bipolar "
-    "CV In can sweep it through freeze in both directions.",
-    "Modulation source for Threshold.",
-    "Modulation source for Grain Size.",
-    "Modulation source for Quality.",
+    "CV In can sweep it through freeze in both directions.\n\n- "
+    "**Zones:** In Env · Out Env · CV In, + CV 2 · CV 3 with the jacks as "
+    "inputs",
+    "Modulation source for Threshold.\n\n- **Zones:** In Env · Out Env · "
+    "CV In, + CV 2 · CV 3 with the jacks as inputs",
+    "Modulation source for Grain Size.\n\n- **Zones:** In Env · Out Env · "
+    "CV In, + CV 2 · CV 3 with the jacks as inputs",
+    "Modulation source for Quality.\n\n- **Zones:** In Env · Out Env · CV "
+    "In, + CV 2 · CV 3 with the jacks as inputs",
     "Modulation source for Feedback.\n\nThe output follower acts as a "
     "governor here: the louder the output gets, the further the loop gain "
-    "can go before it runs.",
+    "can go before it runs.\n\n- **Zones:** In Env · Out Env · CV In, + "
+    "CV 2 · CV 3 with the jacks as inputs",
 };
 
 inline constexpr const char* kSecName[6] = {
@@ -138,7 +168,7 @@ inline constexpr const char* kSecHelp[6] = {
     "tonality of whatever the loop regenerates.",
 };
 
-/* Manual sections: the overviews with no entity to hang on, and the two
+/* Manual sections: the overviews with no entity to hang on, and the
  * gestures that belong to no button. */
 inline constexpr const char* kRoutingOverview =
     "Each potentiometer is divided into colored segments that set which "
@@ -158,9 +188,32 @@ inline constexpr const char* kSecondaryOverview =
     "Deeper engine parameters: the envelope followers, overall latency "
     "and fade time, the nonlinear saturators, and more.";
 
+inline constexpr const char* kRoutingPageHelpJson =
+    "[\"Each potentiometer is divided into colored segments that set "
+    "which source that control's modulation comes from:\\n\\n- Orange · "
+    "input envelope follower\\n- Blue · output envelope follower\\n- "
+    "White · external CV input\\n- Purple · CV 2, the Trig 1 jack as an "
+    "input\\n- Green · CV 3, the Env 1 jack as an input\\n\\nThe selected "
+    "segment glows with its source's live level, so you can see whether "
+    "anything is arriving. The default is the input follower; how hard "
+    "each source pushes is set on the Depth page.\\n\\nOut of the box, "
+    "**Trig 1** and **Env 1** are CV inputs, **CV 2** and **CV 3**, and "
+    "every routing knob has two more segments for them, purple and green. "
+    "Set **Trig 1 / Env 1 Jacks** to Outputs (web programmer, Options) to "
+    "use them as printed. Saved with each preset.\"]";
+
+inline constexpr const char* kSecondaryPageHelpJson =
+    "[\"Deeper engine parameters: the envelope followers, overall latency "
+    "and fade time, the nonlinear saturators, and more.\"]";
+
 inline constexpr const char* kGesturesOverview =
     "A small set of button moves for saving, loading, flipping direction "
-    "and snapping knobs home. Each works the same on every page.";
+    "and snapping knobs home, and how the panel's lights answer them. "
+    "Each works the same on every page.\n\n- **Save**: hold B1 + B2 for "
+    "0.33 s\n- **Load**: hold B2 + B3 for 0.5 s\n- **Factory reset**: "
+    "hold B1 + B3 for 0.5 s\n- **Polarity flip**: hold B2, nudge Pitch or "
+    "Stretch\n- **Shift snap**: hold B3, nudge any knob\n- **Slice**: tap "
+    "B2; it fires on release";
 
 inline constexpr const char* kPotCatch =
     "Every page stores its own value for each knob. After a page switch "
@@ -174,28 +227,37 @@ inline constexpr const char* kSlicing =
     "fade-length crossfade, and re-anchors the stretch grid from either "
     "direction.\n\nManual and external slices are always accepted, even "
     "with auto-slicing muted at the top of P3. Kept detector events are "
-    "at least 150 ms apart, and nothing splices faster than one fade.";
+    "at least 150 ms apart, and nothing splices faster than one "
+    "fade.\n\n- **Auto:** Detected transients above P3\n- **Manual:** B2, "
+    "on release\n- **External:** Trig In rising edge\n- **Reports:** Trig "
+    "1 pulse, B2 dark flash";
+
+inline constexpr const char* kReadingPanel =
+    "All three buttons wear the visible page's color, so activity reads "
+    "against it: B2 blinks dark on every slice, and a save, load or "
+    "factory reset confirms with three bright white flashes on all three "
+    "buttons.\n\nThe pips at six o'clock under P3–P6 always show the four "
+    "followers, on every page and whatever the jacks are set to carry. "
+    "The trigger pips hold for 60 ms, so a 10 ms pulse is easy to "
+    "see.\n\n- **P3 pip:** Slice triggers\n- **P4 pip:** Output "
+    "triggers\n- **P5 pip:** Input envelope; red on input clip\n- **P6 "
+    "pip:** Output envelope\n- **Slice:** B2 blinks dark\n- **Save, load, "
+    "reset:** Three white flashes on all three buttons";
 
 /* Buttons, jacks (panel grid order: top row L→R, then bottom row) */
+inline constexpr const char* kButtonName[3] = {
+    "Page",
+    "Slice / Flip",
+    "Page / Shift",
+};
+
 inline constexpr const char* kButton[3] = {
-    "Rotates between the two primary pages, the warm-colored ones. If the "
-    "module is showing a B3 page, the first press jumps back to whichever "
-    "of Primary or Depth you left; the next press advances.\n\nB1 is also "
-    "half of two chords: with B2 it saves, with B3 it takes every page "
-    "back to factory.",
-    "**Tap** to fire a slice: both read heads jump to the current moment "
-    "with a crossfade. It fires as the button comes up, so a quick tap "
-    "feels instant, and it works even when P3 is at the top and "
-    "auto-slicing is muted. Pressed as part of a chord, it never "
-    "slices.\n\n**Hold** past a tenth of a second and P1/P2 become "
-    "direction controls. If the hold flipped anything, the release "
-    "doesn't slice. If it didn't, it slices like a slow tap.",
-    "Rotates between the two secondary pages, the cool-colored ones. Like "
-    "B1, the first press from the other group jumps back to where this "
-    "group was left. The page changes on release.\n\n**Hold** it, as "
-    "printed, for SHIFT: every knob on the page holds still and toggles "
-    "between where it was and its snap target. If the hold snapped "
-    "anything, the release doesn't change the page.",
+    "Steps between the Primary and Depth pages. From a B3 page, the first "
+    "press returns to whichever you left.",
+    "Tap to slice; it fires on release, and never as part of a chord. "
+    "Hold it to flip Pitch or Stretch.",
+    "Steps between the Routing and Secondary pages. Hold it for SHIFT, to "
+    "snap knobs to their targets.",
 };
 
 inline constexpr const char* kButtonTap[3] = {
@@ -207,13 +269,16 @@ inline constexpr const char* kButtonTap[3] = {
 inline constexpr const char* kJack[10] = {
     "Left input. The two channels are detected and sliced independently.",
     "External slice trigger. Every rising edge is taken, even with "
-    "auto-slicing muted at the top of P3. Shares B2's dark flash.",
+    "auto-slicing muted at the top of P3. Shares B2's dark flash.\n\n- "
+    "**Fires:** Rising edge, ~+2 V\n- **Re-arms:** ~+1 V",
     "By default, CV 2: a bipolar CV input with its own segment on every "
     "routing knob.\n\nSet to Outputs, it pulses once per slice that "
     "actually happens: detected transients, B2 presses and Trig In edges "
     "alike. It never fires faster than the detector's 150 ms hold-off, "
     "and a long fade thins it further, because the fade is also the "
-    "retrigger floor.",
+    "retrigger floor.\n\n- **Default:** CV 2 in, the purple routing "
+    "segment\n- **As output:** 0 / 5 V, 10 ms pulse on every slice\n- "
+    "**Pip:** P3 shows slice triggers",
     "While Trig 1 and Env 1 are inputs, **Trig 2** and **Env 2** each "
     "carry any of the four follower signals: input triggers (every "
     "slice), output triggers, the input envelope or the output envelope "
@@ -222,7 +287,9 @@ inline constexpr const char* kJack[10] = {
     "to Outputs, all four carry what is printed. The 6pm pips always show "
     "the followers, whatever the jacks carry.\n\nOutput triggers are a "
     "pulse on each transient the output follower keeps, with the same 150 "
-    "ms hold-off. They never slice anything.",
+    "ms hold-off. They never slice anything.\n\n- **Pulse:** 0 / 5 V, 10 "
+    "ms\n- **Default:** Input triggers: every slice\n- **Pip:** P4 shows "
+    "output triggers",
     "Left output, after the dry/wet mix. There is no dry normalling in "
     "hardware.",
     "Right input.",
@@ -231,7 +298,10 @@ inline constexpr const char* kJack[10] = {
     "1 jacks.",
     "By default, CV 3: a bipolar CV input with its own segment on every "
     "routing knob.\n\nSet to Outputs, it carries the input follower's "
-    "envelope, the same signal the Routing page offers as a mod source.",
+    "envelope, the same signal the Routing page offers as a mod "
+    "source.\n\n- **Default:** CV 3 in, the green routing segment\n- **As "
+    "output:** 0 – 5 V input envelope\n- **Pip:** P5 shows the input "
+    "envelope; red on input clip",
     "While Trig 1 and Env 1 are inputs, **Trig 2** and **Env 2** each "
     "carry any of the four follower signals: input triggers (every "
     "slice), output triggers, the input envelope or the output envelope "
@@ -239,46 +309,46 @@ inline constexpr const char* kJack[10] = {
     "and the input envelope, so nothing is lost. With Trig 1 / Env 1 set "
     "to Outputs, all four carry what is printed. The 6pm pips always show "
     "the followers, whatever the jacks carry.\n\nThe output envelope is "
-    "taken from the post-mix sum.",
+    "taken from the post-mix sum.\n\n- **Default:** Input envelope\n- "
+    "**Pip:** P6 shows the output envelope",
     "Right output, after the dry/wet mix.",
 };
 
 /* Button gestures */
 inline constexpr const char* kGestureReset =
     "Every page returns to its factory defaults, whichever page you're "
-    "on. Your save is untouched, so B2+B3 brings it back.";
+    "on. Your save is untouched, so B2+B3 brings it back.\n\n- "
+    "**Gesture:** Hold B1 + B3 for 0.5 s\n- **Affects:** All four "
+    "pages\n- **Confirms:** Three white flashes";
 
 inline constexpr const char* kGestureSave =
     "Saves all four pages as your save point, which is also what the "
-    "module boots into.\n\nThe slots are a **save history**. Slot 1 is "
-    "always your latest save, and slots 2–16 keep the fifteen before it; "
-    "once they're full, each new save replaces the oldest. Panel saves "
-    "name themselves **Save 1**, **Save 2** and so on, so the programmer "
-    "shows their order; a name you give a save in the programmer is kept. "
-    "Recall an older one from the web programmer: load it onto the "
-    "module, then save from the panel to make it your latest.";
+    "module boots into.\n\n- **Gesture:** Hold B1 + B2 for 0.33 s\n- "
+    "**Writes:** Slot 1, the boot slot\n- **History:** The save it "
+    "replaces joins slots 2–16; the oldest drops off\n- **Confirms:** "
+    "Three white flashes";
 
 inline constexpr const char* kGestureLoad =
     "Brings your save point back on all four pages. Catch pips show on "
     "any setting that was different. It also undoes a factory reset, "
-    "which never touches the save.\n\nOlder saves in the history are "
-    "loaded from the web programmer over USB.";
+    "which never touches the save.\n\n- **Gesture:** Hold B2 + B3 for 0.5 "
+    "s\n- **Reads:** Slot 1; nothing if empty\n- **At power-up:** Slot 1, "
+    "or factory defaults if empty\n- **Confirms:** Three white flashes";
 
 inline constexpr const char* kGestureFlip =
     "Hold B2 and nudge Pitch or Stretch, and its value flips polarity at "
     "the same rate: 1.5× forward becomes 1.5× reverse. Flip back and "
     "forth for as long as B2 is held. On release, whichever polarity it's "
-    "in becomes the new setting, and B2 doesn't slice.";
+    "in becomes the new setting, and B2 doesn't slice.\n\n- **Gesture:** "
+    "Hold B2, nudge Pitch or Stretch\n- **Where:** Primary page";
 
 inline constexpr const char* kGestureSnap =
     "Hold SHIFT and nudge any knob, on any page, and it snaps to its "
     "factory default: depths to exactly zero. Nudge back the other way "
     "while still holding and it returns. It's the per-knob factory "
-    "reset.\n\n**Shift Snap Target** (web programmer, Options) picks "
-    "where a knob snaps: **Factory**, or **Save point**, its value in "
-    "your latest save (slot 1), so each knob toggles between where you "
-    "are and where you saved. Save point falls back to factory while "
-    "nothing is saved.";
+    "reset.\n\n- **Gesture:** Hold B3 (SHIFT), nudge any knob\n- "
+    "**Where:** Every page\n- **Target:** Factory, or your save point "
+    "(web programmer)";
 
 /* Shared paragraphs: the presets panel and the Options fields */
 inline constexpr const char* kHistory =

@@ -114,7 +114,7 @@ if(ALCHEMY_DEBUG_SRAM)
         SUFFIX ".elf"
         LINK_DEPENDS "${_alchemy_sram_lds}")
     target_link_libraries(capicola PRIVATE
-        daisy alchemy::board_alchemy_lab_v2 alchemy::surface)
+        daisy alchemy::board_alchemy_lab_v2 alchemy::surface alchemy::host_link)
     target_compile_options(capicola PRIVATE -Og -g3)
     target_link_options(capicola PRIVATE
         LINKER:-T,${_alchemy_sram_lds}
