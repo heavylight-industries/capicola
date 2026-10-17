@@ -5,7 +5,7 @@ The core idea of the module is this: Incoming stereo audio gets stretched out, a
 
 ![Block Diagram](docs/Capicola_Diagram.svg)
 
-The input and output envelope followers and their transients don't just live internal to the module. They're accessible on the CV outputs of the module to trigger and modulate external devices, and which follower goes to which jack is selectable in the web programmer. Each of the performance controls is normalized to the envelope followers, enabling the dynamics of the signal to modulate the controls in real time, leading to some bizarre and creative self patching who's intensity is visualized by animating the LED rings.
+The input and output envelope followers and their transients don't just live internal to the module. They're accessible on the CV outputs of the module to trigger and modulate external devices, and which follower goes to which jack is selectable in the web programmer. Each of the performance controls is normalized to the envelope followers, enabling the dynamics of the signal to modulate the controls in real time, leading to some bizarre and creative self patching whose intensity is visualized by animating the LED rings.
 
 KeyframeRecorder.h is the core method as described in the paper, and is set up not only for real time playback but also for offline recording and playback in contexts other than the Alchemy Lab. Additionally, lib contains several header files that are useful in their own right, namely:
 - An implementation of Vadim Zavalashin's "Zero Delay Feedback" filters (1-pole, state variable)
@@ -34,7 +34,7 @@ in depth demonstrations will be posted soon both here and on my YouTube
 channel, [Dialectric Studios](https://www.youtube.com/@dialectricStudios).
 
 ## AI Policy
-The core engines contained within this repo are human created. The intellectual property of keyframe time stretching, the granular slicing engine, etc were developed by me and me alone. Before I knew if the keyframe engine was actually feasible for audio, I tried to have the AI the solve the problem for me, and it failed every time. It wasn't until I put in the hard work to translate my mental model of the sparse and uniform domains into C++ of my own creation that the engine sprung to life. 
+The core engines contained within this repo are human created. The intellectual property of keyframe time stretching, the granular slicing engine, etc were developed by me and me alone. Before I knew if the keyframe engine was actually feasible for audio, I tried to have the AI solve the problem for me, and it failed every time. It wasn't until I put in the hard work to translate my mental model of the sparse and uniform domains into C++ of my own creation that the engine sprung to life. 
 
 That being said, I used AI to assist the creation of the documentation and the linking of my core code to the Alchemy Lab SDK. At the end of the day, it's a matter of efficiency, delegation, and using my own judgement to determine what tasks I hand off to it. 
 
