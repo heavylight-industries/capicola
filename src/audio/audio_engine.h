@@ -15,6 +15,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cmath>
+#include <atomic>
 #include "hardware.h"          // AUDIO_BLOCK_SAMPLES
 #include "util/CpuLoadMeter.h"
 #include "Detector.h"
@@ -77,6 +78,10 @@ class AudioEngine
 
   private:
     static inline float Clamp01(float v) { return v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v); }
+
+    static_assert(std::atomic<bool>::is_always_lock_free,
+                  "Slice handoff must not lock inside the audio interrupt");
+    std::atomic<bool> sliceRequested{false};
 
     float mix = 1.0f;   // dry/wet, 1.0 = full wet (stretched)
 

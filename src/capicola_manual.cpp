@@ -38,31 +38,17 @@ extern Page        perfPage, depthPage;
 static Jack in_l  = Jack("in.l", "In L", JackSig::AudioIn).Short("IN L");
 static Jack in_r  = Jack("in.r", "In R", JackSig::AudioIn).Short("IN R");
 
-static Jack trig_in = Jack("trig.in", "Trig In", JackSig::Trig).Short("TRIG IN");
-static Jack cv_in   = Jack("cv.in",   "CV In",   JackSig::CvBi).Short("CV IN");
-
-/* The four follower jacks change role with the jack options, so each gets one
- * declaration per role: Trig 1 / Env 1 as CV 2 / CV 3 inputs or as printed,
- * Trig 2 / Env 2 typed by what they carry. DescribeJacks() publishes the set
- * that matches, and main.cpp refreshes the descriptor whenever the options
- * change. Printed names stay as the silkscreen labels. */
-static Jack trig_1_in   = Jack("trig.1", "CV 2 / Trig 1", JackSig::CvBi).Short("TRIG 1");
-static Jack trig_1_out  = Jack("trig.1", "Trig 1",        JackSig::Trig).Short("TRIG 1");
-static Jack env_1_in    = Jack("env.1",  "CV 3 / Env 1",  JackSig::CvBi).Short("ENV 1");
-static Jack env_1_out   = Jack("env.1",  "Env 1",         JackSig::CvUni).Short("ENV 1");
-
-static Jack trig_2_trig = Jack("trig.2", "Trig 2", JackSig::Trig).Short("TRIG 2");
-static Jack trig_2_env  = Jack("trig.2", "Trig 2", JackSig::CvUni).Short("TRIG 2");
-static Jack env_2_trig  = Jack("env.2",  "Env 2",  JackSig::Trig).Short("ENV 2");
-static Jack env_2_env   = Jack("env.2",  "Env 2",  JackSig::CvUni).Short("ENV 2");
-
-
+static Jack trig_in = Jack("trig.in", "J3", JackSig::Trig).Short("J3");
+static Jack cv_in = Jack("cv.in", "J4", JackSig::CvBi).Short("J4");
+static Jack trig_1 = Jack("trig.1", "J5", JackSig::CvBi).Short("J5");
+static Jack env_1 = Jack("env.1", "J6", JackSig::CvBi).Short("J6");
+static Jack trig_2 = Jack("trig.2", "J7", JackSig::Trig).Short("J7");
+static Jack env_2 = Jack("env.2", "J8", JackSig::CvUni).Short("J8");
 static Jack out_l = Jack("out.l", "Out L", JackSig::AudioOut).Short("OUT L");
 static Jack out_r = Jack("out.r", "Out R", JackSig::AudioOut).Short("OUT R");
 
-/* The set the descriptor currently carries; DescribeJacks() rewrites it. */
-static Jack published[10] = {in_l, in_r, trig_in, cv_in, trig_1_in, env_1_in,
-                             trig_2_trig, env_2_env, out_l, out_r};
+static Jack published[10] = {in_l, in_r, trig_in, cv_in, trig_1, env_1,
+                             trig_2, env_2, out_l, out_r};
 
 /* ── Panel buttons (metadata only — main.cpp owns the behavior) ───────── */
 
@@ -92,7 +78,7 @@ static VirtualButton b3 = VirtualButton(kButtonB3, manual_text::kButtonName[2])
  * with the rest of the manual. Zone order matches kSrcColors / ZoneOf(). */
 
 extern const char* const kRouteDispJson =
-    "{\"kind\":\"enum\",\"labels\":[\"In Env\",\"Out Env\",\"CV In\",\"CV 2\",\"CV 3\"]}";
+    "{\"kind\":\"enum\",\"labels\":[\"In Env\",\"Out Env\"]}";
 
 extern const char* const kRouteFieldId[6] = {
     "route.p1", "route.p2", "route.p3", "route.p4", "route.p5", "route.p6",
@@ -149,22 +135,6 @@ extern const char* const kOptSnapDisp =
     "{\"kind\":\"enum\",\"labels\":[\"Factory\",\"Save point\"]}";
 extern const char* const kOptSnapHelp = manual_text::kSnapTarget;
 
-extern const char* const kOptJacksId   = "opt.jacks";
-extern const char* const kOptJacksName = "Trig 1 / Env 1 Jacks";
-extern const char* const kOptJacksDisp =
-    "{\"kind\":\"enum\",\"labels\":[\"Outputs\",\"CV inputs\"]}";
-extern const char* const kOptJacksHelp = manual_text::kJackMode;
-
-/* Trig 2 / Env 2 in CV-input mode. Label order = jacks::Signal. */
-extern const char* const kOptTrig2Id   = "opt.trig2";
-extern const char* const kOptTrig2Name = "Trig 2 Jack";
-extern const char* const kOptEnv2Id    = "opt.env2";
-extern const char* const kOptEnv2Name  = "Env 2 Jack";
-extern const char* const kOptOutDisp =
-    "{\"kind\":\"enum\",\"labels\":[\"Input triggers\",\"Output triggers\","
-    "\"Input envelope\",\"Output envelope\"]}";
-extern const char* const kOptOutsHelp = manual_text::kJackOuts;
-
 /* ── Module-level manual ──────────────────────────────────────────────── */
 
 /* The overviews with no entity to hang on, and the two gestures that belong
@@ -195,7 +165,7 @@ void AttachManualHelp()
 
     pitch    .Help(kPrimaryKnob[0]).SeeAlso(stretch, cvDepth1);
     stretch  .Help(kPrimaryKnob[1]).SeeAlso(pitch, cvDepth2);
-    threshold.Help(kPrimaryKnob[2]).SeeAlso(trig_in, b2);
+    threshold.Help(kPrimaryKnob[2]).SeeAlso(b2);
     grainSize.Help(kPrimaryKnob[3]).SeeAlso(quality);
     quality  .Help(kPrimaryKnob[4]).SeeAlso(grainSize, stretch);
     feedback .Help(kPrimaryKnob[5]).SeeAlso(threshold);
@@ -207,21 +177,11 @@ void AttachManualHelp()
     for (int p = 0; p < 6; p++)
         depth[p]->Help(kDepthKnob[p]).SeeAlso(*target[p]);
 
-    /* kJack is in panel grid order: top row L→R, then the bottom row. */
-    in_l   .Help(kJack[0]);
-    trig_in.Help(kJack[1]).SeeAlso(threshold, b2);
-    for (Jack* j : {&trig_1_in, &trig_1_out})
-        j->Help(kJack[2]).SeeAlso(threshold, b2, "opt.jacks");
-    for (Jack* j : {&trig_2_trig, &trig_2_env})
-        j->Help(kJack[3]).SeeAlso("opt.trig2");
-    out_l  .Help(kJack[4]);
-    in_r   .Help(kJack[5]);
-    cv_in  .Help(kJack[6]);
-    for (Jack* j : {&env_1_in, &env_1_out})
-        j->Help(kJack[7]).SeeAlso("opt.jacks");
-    for (Jack* j : {&env_2_trig, &env_2_env})
-        j->Help(kJack[8]).SeeAlso("opt.env2");
-    out_r  .Help(kJack[9]);
+    /* Audio help is fixed; assignable jack help follows the selected function. */
+    in_l.Help(kJack[0]);
+    out_l.Help(kJack[4]);
+    in_r.Help(kJack[5]);
+    out_r.Help(kJack[9]);
 
     b1.Help(kButton[0])
         .GestureHelp("click", kButtonTap[0])
@@ -232,28 +192,29 @@ void AttachManualHelp()
         .GestureHelp("press", kButtonTap[1])
         .GestureHelp("hold", kGestureFlip)
         .GestureHelp("hold-b2-b3", kGestureLoad)
-        .SeeAlso(threshold, trig_in);
+        .SeeAlso(threshold);
     b3.Help(kButton[2])
         .GestureHelp("click", kButtonTap[2])
         .GestureHelp("hold", kGestureSnap)
         .SeeAlso(b1, "opt.snap");
 }
 
-/* Publish the jack set for these options. Out of CV-input mode the four
- * follower jacks are exactly as printed, whatever the Trig 2 / Env 2 choices. */
+/* Stable connector identities, with live signal classes and approved help. */
 void DescribeJacks(hostlink::Host& host, const jacks::Options& o)
 {
-    auto env = [](uint8_t s) { return s == jacks::kInEnv || s == jacks::kOutEnv; };
-    const bool t2env = o.cvIn && env(o.trig2);
-    const bool e2env = !o.cvIn || env(o.env2);
     published[0] = in_l;
     published[1] = in_r;
-    published[2] = trig_in;
-    published[3] = cv_in;
-    published[4] = o.cvIn ? trig_1_in : trig_1_out;
-    published[5] = o.cvIn ? env_1_in  : env_1_out;
-    published[6] = t2env  ? trig_2_env : trig_2_trig;
-    published[7] = e2env  ? env_2_env  : env_2_trig;
+    for (uint8_t j = 0; j < jacks::kNumJacks; ++j)
+    {
+        const uint8_t f = jacks::FunctionAt(o, j);
+        const JackSig sig = jacks::IsCvInput(f) ? JackSig::CvBi
+            : f == jacks::kInputEnvelope || f == jacks::kOutputEnvelope
+                ? JackSig::CvUni : JackSig::Trig;
+        published[j + 2] = Jack(manual_text::kJackId[j], manual_text::kJackPanel[j], sig)
+            .Short(manual_text::kJackPanel[j])
+            .Help(manual_text::kJackFunctionHelp[f])
+            .SeeAlso(manual_text::kJackFieldId[j]);
+    }
     published[8] = out_l;
     published[9] = out_r;
     host.Jacks(published);

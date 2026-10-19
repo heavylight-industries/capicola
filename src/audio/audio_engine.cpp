@@ -88,6 +88,7 @@ void AudioEngine::Init()
      * mono-summed output. Never punches — signal source only. */
     outDet.Init(48000.0f);
     SetTkeoCutoff(kTkeoFc);
+    sliceRequested.store(false, std::memory_order_relaxed);
     sliceCount = 0;
     envNormIn  = envNormOut  = 0.0f;
     inPeak     = 0.0f;
@@ -101,6 +102,16 @@ void AudioEngine::ProcessBlock(const float* in_l, const float* in_r,
                                std::size_t  n)
 {
     cpuMeter.OnBlockStart();
+
+    // The control loop posts one request. Both recorders receive it here,
+    // where an audio interrupt cannot split a stereo slice across two blocks.
+    if (sliceRequested.exchange(false, std::memory_order_acq_rel)
+        && sparse_l.GetState() == State::LIVE_EFFECT
+        && sparse_r.GetState() == State::LIVE_EFFECT)
+    {
+        sparse_l.SubmitRequest(Request::SLICE);
+        sparse_r.SubmitRequest(Request::SLICE);
+    }
 
     const std::size_t m = (n < kMaxBlock) ? n : kMaxBlock;
 
@@ -280,11 +291,7 @@ void AudioEngine::SetDriveCharacter(float c)
 
 void AudioEngine::TriggerSlice()
 {
-    if (sparse_l.GetState() == State::LIVE_EFFECT)
-    {
-        sparse_l.SubmitRequest(Request::SLICE);
-        sparse_r.SubmitRequest(Request::SLICE);
-    }
+    sliceRequested.store(true, std::memory_order_release);
 }
 
 } // namespace AlchemyLabAudio

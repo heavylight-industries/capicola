@@ -23,7 +23,6 @@
 #include "KeyframeRecorder.h"
 #include "Shapers.h"
 #include "filter.h"
-#include "jack_routing.h"   /* src/ — the firmware's CV jack routing */
 
 using namespace capicola;
 
@@ -757,103 +756,6 @@ static void test_fuzz()
 
 /* ── main ───────────────────────────────────────────────────────────── */
 
-/* ── CV jack routing (src/jack_routing.h) ───────────────────────────────
- * Every option combination against a grid of follower states. Expectations
- * are written out from the spec, not computed with jacks::Volts, so a bug in
- * the shared code cannot vouch for itself. */
-static void test_jack_routing()
-{
-    section("jack routing");
-    using namespace jacks;
-
-    /* Factory: Trig 1 / Env 1 are CV inputs, and Trig 2 / Env 2 carry the
-     * input side they gave up. */
-    {
-        const Options o;
-        CHECK(o.cvIn);
-        CHECK(o.trig2 == kInTrig);
-        CHECK(o.env2 == kInEnv);
-    }
-
-    /* What a jack carrying `sig` must read, straight from the spec. */
-    auto expect = [](uint8_t sig, bool inTrig, bool outTrig, float inEnv, float outEnv) {
-        auto clamp01 = [](float v) { return v < 0.0f ? 0.0f : v > 1.0f ? 1.0f : v; };
-        if (sig == kInTrig)  return inTrig  ? 5.0f : 0.0f;
-        if (sig == kOutTrig) return outTrig ? 5.0f : 0.0f;
-        if (sig == kInEnv)   return 5.0f * clamp01(inEnv);
-        return 5.0f * clamp01(outEnv);
-    };
-
-    /* Distinct in/out values, so a swapped signal can't pass by coincidence;
-     * out-of-range envelopes check the clamp. */
-    const float inEnvs[]  = {0.0f, 0.25f, 1.0f, 1.4f, -0.2f};
-    const float outEnvs[] = {0.6f, 0.05f, 0.9f};
-
-    int combos = 0;
-    for (int cv = 0; cv < 2; cv++)
-    for (uint8_t t2 = 0; t2 < kNumSignals; t2++)
-    for (uint8_t e2 = 0; e2 < kNumSignals; e2++)
-    {
-        Options o;
-        o.cvIn = cv; o.trig2 = t2; o.env2 = e2;
-        combos++;
-        for (int it = 0; it < 2; it++)
-        for (int ot = 0; ot < 2; ot++)
-        for (float ie : inEnvs)
-        for (float oe : outEnvs)
-        {
-            Signals sg;
-            sg.inTrig = it; sg.outTrig = ot; sg.inEnv = ie; sg.outEnv = oe;
-            const Plan p = Route(o, sg);
-            if (!cv)
-            {
-                /* Outputs mode: all four drive their printed roles, and the
-                 * Trig 2 / Env 2 choices are ignored. */
-                CHECK(p.output[kTrig1] && p.output[kEnv1] && p.output[kTrig2] && p.output[kEnv2]);
-                CHECK_NEAR(p.volts[kTrig1], expect(kInTrig,  it, ot, ie, oe), 1e-6);
-                CHECK_NEAR(p.volts[kEnv1],  expect(kInEnv,   it, ot, ie, oe), 1e-6);
-                CHECK_NEAR(p.volts[kTrig2], expect(kOutTrig, it, ot, ie, oe), 1e-6);
-                CHECK_NEAR(p.volts[kEnv2],  expect(kOutEnv,  it, ot, ie, oe), 1e-6);
-            }
-            else
-            {
-                /* CV-input mode: Trig 1 / Env 1 are never driven; Trig 2 and
-                 * Env 2 carry exactly what was picked for each. */
-                CHECK(!p.output[kTrig1] && !p.output[kEnv1]);
-                CHECK(p.output[kTrig2] && p.output[kEnv2]);
-                CHECK_NEAR(p.volts[kTrig2], expect(t2, it, ot, ie, oe), 1e-6);
-                CHECK_NEAR(p.volts[kEnv2],  expect(e2, it, ot, ie, oe), 1e-6);
-            }
-        }
-    }
-    CHECK(combos == 32);
-
-    /* Preset bytes: every option survives a save and a load. */
-    for (int cv = 0; cv < 2; cv++)
-    for (uint8_t t2 = 0; t2 < kNumSignals; t2++)
-    for (uint8_t e2 = 0; e2 < kNumSignals; e2++)
-    {
-        Options o;
-        o.cvIn = cv; o.trig2 = t2; o.env2 = e2;
-        uint8_t b[kBytes];
-        Encode(o, b);
-        const Options r = Decode(b);
-        CHECK(r.cvIn == o.cvIn && r.trig2 == t2 && r.env2 == e2);
-    }
-
-    /* Corrupt or foreign bytes: every value of every byte decodes to
-     * something legal, and anything unknown means the printed roles. */
-    for (int v = 0; v < 256; v++)
-    {
-        const uint8_t b0[kBytes] = {(uint8_t)v, 1, 3};
-        CHECK(Decode(b0).cvIn == (v == 1));
-        const uint8_t b1[kBytes] = {1, (uint8_t)v, 3};
-        CHECK(Decode(b1).trig2 == (v < kNumSignals ? v : kOutTrig));
-        const uint8_t b2[kBytes] = {1, 0, (uint8_t)v};
-        CHECK(Decode(b2).env2 == (v < kNumSignals ? v : kOutEnv));
-    }
-}
-
 int main()
 {
     test_deluxe_line();
@@ -866,7 +768,6 @@ int main()
     test_keyframe_recorder();
     test_trigger_stream();
     test_fuzz();
-    test_jack_routing();
 
     std::printf("%d checks, %d failures\n", g_checks, g_failures);
     return g_failures ? 1 : 0;

@@ -45710,10 +45710,7 @@ Z" />
       </svg>
       <figcaption class="cap" id="platecap"></figcaption>
       <div class="hint" id="hint">Click any knob, button or jack</div>
-      <div class="jacks" id="jacks" role="group" aria-label="Trig 1 and Env 1 jacks">
-        <span>Trig 1 / Env 1</span>
-        <button data-jacks="0">Outputs</button><button data-jacks="1">CV inputs</button>
-      </div>
+
     </figure>
     <nav class="list" id="list" aria-label="Controls"></nav>
     <article class="detail" id="detail" aria-live="polite"></article>
@@ -45762,17 +45759,127 @@ a knob snaps: <strong>Factory</strong>, or <strong>Save point</strong>, its valu
 so each knob toggles between where you are and where you saved. Save point falls back
 to factory while nothing is saved.`;
 
-const JACK_MODE = `Out of the box, <strong>Trig 1</strong> and <strong>Env 1</strong> are CV
-inputs, <strong>CV 2</strong> and <strong>CV 3</strong>, and every routing knob has two
-more segments for them, purple and green. Set <strong>Trig 1 / Env 1 Jacks</strong> to
-Outputs (web programmer, Options) to use them as printed. Saved with each preset.`;
-
-const JACK_OUTS = `While Trig 1 and Env 1 are inputs, <strong>Trig 2</strong> and
-<strong>Env 2</strong> each carry any of the four follower signals: input triggers (every
-slice), output triggers, the input envelope or the output envelope (web programmer,
-Options). By default they carry the input triggers and the input envelope, so nothing is
-lost. With Trig 1 / Env 1 set to Outputs, all four carry what is printed. The 6pm pips
-always show the followers, whatever the jacks carry.`;
+const JACK_FUNCTIONS = [
+  {
+    "name": "Pitch",
+    "group": "CV input",
+    "direction": "in",
+    "sig": "cv-bi",
+    "help": "Incoming voltage modulates pitch."
+  },
+  {
+    "name": "Stretch",
+    "group": "CV input",
+    "direction": "in",
+    "sig": "cv-bi",
+    "help": "Incoming voltage modulates stretch."
+  },
+  {
+    "name": "Threshold",
+    "group": "CV input",
+    "direction": "in",
+    "sig": "cv-bi",
+    "help": "Incoming voltage modulates threshold."
+  },
+  {
+    "name": "Grain Size",
+    "group": "CV input",
+    "direction": "in",
+    "sig": "cv-bi",
+    "help": "Incoming voltage modulates grain size."
+  },
+  {
+    "name": "Quality",
+    "group": "CV input",
+    "direction": "in",
+    "sig": "cv-bi",
+    "help": "Incoming voltage modulates quality."
+  },
+  {
+    "name": "Feedback",
+    "group": "CV input",
+    "direction": "in",
+    "sig": "cv-bi",
+    "help": "Incoming voltage modulates feedback."
+  },
+  {
+    "name": "Slice",
+    "group": "Trigger input",
+    "direction": "in",
+    "sig": "trig",
+    "help": "An incoming trigger starts a new slice."
+  },
+  {
+    "name": "Input envelope out",
+    "short": "Input envelope",
+    "group": "Envelope output",
+    "direction": "out",
+    "sig": "cv-uni",
+    "help": "Sends the input envelope from this jack."
+  },
+  {
+    "name": "Output envelope out",
+    "short": "Output envelope",
+    "group": "Envelope output",
+    "direction": "out",
+    "sig": "cv-uni",
+    "help": "Sends the output envelope from this jack."
+  },
+  {
+    "name": "Slice trigger out",
+    "short": "Slice trigger",
+    "group": "Trigger output",
+    "direction": "out",
+    "sig": "trig",
+    "help": "Sends a trigger whenever a slice starts."
+  },
+  {
+    "name": "Output transient out",
+    "short": "Output transients",
+    "group": "Trigger output",
+    "direction": "out",
+    "sig": "trig",
+    "help": "Sends a trigger when the output detector finds a transient."
+  }
+];
+const JACK_ASSIGNMENTS = [
+  {
+    "id": "trig.in",
+    "panel": "J3",
+    "field": "jack.j3.function",
+    "default": 6
+  },
+  {
+    "id": "cv.in",
+    "panel": "J4",
+    "field": "jack.j4.function",
+    "default": 0
+  },
+  {
+    "id": "trig.1",
+    "panel": "J5",
+    "field": "jack.j5.function",
+    "default": 1
+  },
+  {
+    "id": "env.1",
+    "panel": "J6",
+    "field": "jack.j6.function",
+    "default": 5
+  },
+  {
+    "id": "trig.2",
+    "panel": "J7",
+    "field": "jack.j7.function",
+    "default": 9
+  },
+  {
+    "id": "env.2",
+    "panel": "J8",
+    "field": "jack.j8.function",
+    "default": 7
+  }
+];
 
 const PREAMBLE = `Incoming stereo is stretched while its envelope and transients are tracked in
 parallel. When a transient passes the threshold, the lagging read head snaps to
@@ -45807,59 +45914,23 @@ const BUTTONS = [
 ];
 
 /* JACK order: top row then bottom row, left to right. */
+const assignedJack = panel => {
+  const assignment = JACK_ASSIGNMENTS.find(j => j.panel === panel);
+  const fn = JACK_FUNCTIONS[assignment.default];
+  return { l: panel, kicker: fn.group, facts: [["Default", fn.name]],
+    body: `<p>${fn.help}</p>` };
+};
 const JACKS = [
   { l: "In L", kicker: "Jack · audio in",
     body: `<p>Left input. The two channels are detected and sliced independently.</p>`,
     see: ["j:5"] },
-  { l: "Trig In", kicker: "Jack · trigger in",
-    facts: [["Fires", "Rising edge, ~+2 V"], ["Re-arms", "~+1 V"]],
-    body: `<p>External slice trigger. Every rising edge is taken, even with auto-slicing
-      muted at the top of P3. Shares B2's dark flash.</p>`,
-    see: ["b2", "perf:2", "j:2"] },
-  { l: "Trig 1", kicker: "Jack · CV 2 in · or trigger out",
-    facts: [["Default", "CV 2 in, the purple routing segment"],
-            ["As output", "0 / 5 V, 10 ms pulse on every slice"], ["Pip", "P3 shows slice triggers"]],
-    body: `<p>By default, ${L("routing:", "CV 2")}: a bipolar CV input with its own
-      segment on every routing knob.</p>
-      <p>Set to Outputs, it pulses once per slice that actually happens: detected
-      transients, B2 presses and Trig In edges alike. It never fires faster than the
-      detector's 150 ms hold-off, and a long ${L("secondary:1", "fade")} thins it further,
-      because the fade is also the retrigger floor.</p>`,
-    see: ["perf:2", "secondary:1", "j:3"] },
-  { l: "Trig 2", kicker: "Jack · trigger out",
-    facts: [["Pulse", "0 / 5 V, 10 ms"], ["Default", "Input triggers: every slice"],
-            ["Pip", "P4 shows output triggers"]],
-    body: `<p>${JACK_OUTS}</p>
-      <p>Output triggers are a pulse on each transient the output follower keeps, with the
-      same 150 ms hold-off. They never slice anything.</p>`,
-    see: ["j:2", "j:8"] },
+  assignedJack("J3"), assignedJack("J5"), assignedJack("J7"),
   { l: "Out L", kicker: "Jack · audio out",
-    body: `<p>Left output, after the dry/wet mix. There is no dry normalling in
-      hardware.</p>`,
+    body: `<p>Left output, after the dry/wet mix. There is no dry normalling in hardware.</p>`,
     see: ["secondary:4", "j:9"] },
   { l: "In R", kicker: "Jack · audio in",
     body: `<p>Right input.</p>`, see: ["j:0"] },
-  { l: "CV In", kicker: "Jack · CV in",
-    facts: [["Range", "Eurorack bipolar"]],
-    body: `<p>The external modulation source, routable to any Primary knob from the
-      ${L("routing:", "Routing")} page. Bipolar, like CV 2 and CV 3 on the Trig 1 and Env 1
-      jacks.</p>`,
-    see: ["routing:0", "depth:0"] },
-  { l: "Env 1", kicker: "Jack · CV 3 in · or envelope out",
-    facts: [["Default", "CV 3 in, the green routing segment"],
-            ["As output", "0 – 5 V input envelope"],
-            ["Pip", "P5 shows the input envelope; red on input clip"]],
-    body: `<p>By default, ${L("routing:", "CV 3")}: a bipolar CV input with its own
-      segment on every routing knob.</p>
-      <p>Set to Outputs, it carries the input follower's envelope, the same signal the
-      Routing page offers as a mod source.</p>`,
-    see: ["routing:0", "secondary:0", "j:8"] },
-  { l: "Env 2", kicker: "Jack · envelope out",
-    facts: [["Range", "0 – 5 V"], ["Default", "Input envelope"],
-            ["Pip", "P6 shows the output envelope"]],
-    body: `<p>${JACK_OUTS}</p>
-      <p>The output envelope is taken from the post-mix sum.</p>`,
-    see: ["routing:0", "j:7"] },
+  assignedJack("J4"), assignedJack("J6"), assignedJack("J8"),
   { l: "Out R", kicker: "Jack · audio out",
     body: `<p>Right output, after the dry/wet mix.</p>`, see: ["j:4"] },
 ];
@@ -45900,10 +45971,10 @@ const VIEWS = {
         see: ["perf:0", "gestures:pingpong", "perf:4", "depth:1"] },
       { l: "Threshold", ring: sweep(0.5, C.orange),
         facts: [["CCW", "Most sensitive: the most slices"], ["CW", "Fewer slices"],
-                ["Top", "Auto-slicing off"], ["Default", "Noon"], ["Pip", "Mirrors Trig 1"]],
+                ["Top", "Auto-slicing off"], ["Default", "Noon"], ["Pip", "Mirrors Slice trigger"]],
         body: `<p>How readily a transient triggers a slice. Lower is more sensitive and slices
           more often; higher slices less. At the very top, auto-slicing is off, and only
-          ${L("b2", "B2")} or ${L("j:1", "Trig In")} slices.</p>`,
+          ${L("b2", "B2")} or a jack assigned to Slice slices.</p>`,
         see: ["b2", "j:1", "j:2", "routing:2"] },
       { l: "Grain Size", ring: sweep(0.15, C.orange),
         facts: [["Range", "32 – 4096 keyframes, linear"], ["Default", "642 keyframes"]],
@@ -45914,7 +45985,7 @@ const VIEWS = {
         see: ["perf:4", "secondary:1"] },
       { l: "Quality", ring: sweep(1.0, C.orange),
         facts: [["Range", "ε 0.08 (crunchy) → 0.001 (full fidelity), linear"],
-                ["Default", "Full fidelity"], ["Pip", "Mirrors Env 1; red on input clip"]],
+                ["Default", "Full fidelity"], ["Pip", "Mirrors Input envelope; red on input clip"]],
         body: `<p>An extremum is only stored as a keyframe if its value differs enough from the
           previous keyframe. Quality sets how much is enough. CW keeps nearly every extremum;
           CCW keeps fewer, making the representation sparser and, in turn, crunchier and more
@@ -45923,7 +45994,7 @@ const VIEWS = {
         see: ["perf:3", "perf:1", "depth:4"] },
       { l: "Feedback", ring: sweep(0.0, C.orange),
         facts: [["Range", "Loop gain 0 – 1.5"], ["Unity", "At ⅔ of the sweep"],
-                ["Default", "Off"], ["Pip", "Mirrors Env 2"]],
+                ["Default", "Off"], ["Pip", "Mirrors Output envelope"]],
         body: `<p>The output is fed back into the input, through a saturator and a tunable
           ${L("secondary:5", "state-variable bandpass")}
           on the way.</p>
@@ -45992,21 +46063,18 @@ const VIEWS = {
       <div class="legend" style="flex-direction:column">
         <span><i style="color:${C.orange};background:${C.orange}"></i>Orange · input envelope follower</span>
         <span><i style="color:${C.blue};background:${C.blue}"></i>Blue · output envelope follower</span>
-        <span><i style="color:${C.white};background:${C.white}"></i>White · external CV input</span>
-        <span><i style="color:${C.violet};background:${C.violet}"></i>Purple · CV 2, the Trig 1 jack as an input</span>
-        <span><i style="color:${C.green};background:${C.green}"></i>Green · CV 3, the Env 1 jack as an input</span>
       </div>
       <p>The selected segment glows with its source's live level, so you can see whether
       anything is arriving. The default is the input follower; how hard each source
       pushes is set on the ${L("depth:", "Depth")} page.</p>
-      <p>${JACK_MODE}</p>`,
+      <p>Assigned CV is added to the internal modulation before the parameter is limited to its range.</p>`,
     knobs: ["Pitch", "Stretch", "Threshold", "Grain Size", "Quality", "Feedback"].map((t, i) => ({
       l: `${t === "Threshold" ? "Thresh." : t} Mod Source`, ring: zones(0),   /* fits the programmer */
-      facts: [["Zones", "In Env · Out Env · CV In, + CV 2 · CV 3 with the jacks as inputs"],
+      facts: [["Zones", "In Env · Out Env"],
               ["Default", "In Env"]],
       body: `<p>Modulation source for ${L(`perf:${i}`, t)}.</p>` + [
-        `<p>Pitch is bipolar, so the bipolar CV In can sweep it through noon in both directions.</p>`,
-        `<p>Stretch is bipolar, so the bipolar CV In can sweep it through freeze in both directions.</p>`,
+        ``,
+        ``,
         ``,
         ``, ``,
         `<p>The output follower acts as a governor here: the louder the output gets, the further
@@ -46132,12 +46200,11 @@ const VIEWS = {
         see: ["gestures:load", "gestures:pingpong"] },
       { id: "slice", l: "Slicing", lit: { b: [1], j: [1, 2] },
         facts: [["Auto", "Detected transients above P3"], ["Manual", "B2, on release"],
-                ["External", "Trig In rising edge"], ["Reports", "Trig 1 pulse, B2 dark flash"]],
+                ["External", "Slice"], ["Reports", "Slice trigger out"]],
         body: `<p>A slice snaps the read heads to the current moment with one fade-length
           crossfade, and re-anchors the stretch grid from either direction.</p>
           <p>Manual and external slices are always accepted, even with auto-slicing muted at
-          the top of ${L("perf:2", "P3")}. Kept detector events are at least 150 ms apart, and nothing splices
-          faster than one fade.</p>`,
+          the top of ${L("perf:2", "P3")}. Kept detector events are at least 150 ms apart.</p>`,
         see: ["perf:2", "b2", "j:1", "j:2", "secondary:1"] },
       { id: "panel", l: "Reading the Panel", lit: { k: [2, 3, 4, 5] },
         facts: [["P3 pip", "Slice triggers"], ["P4 pip", "Output triggers"],
@@ -46200,10 +46267,8 @@ function knobDisplay([cx, cy], spec) {
     else if (f < -0.005) s += ringArc(cx, cy, 0.5 + f, 0.5, spec.n);
     else s += ringArc(cx, cy, 0.495, 0.505, C.center, RING_W, false);
   } else if (spec.t === "zones") {
-    const five = state.jacksIn;
-    const zc = five ? [C.orange, C.blue, C.white, C.violet, C.green] : [C.orange, C.blue, C.white];
-    /* LED splits: 4|5|4, or 2|2|3|2|2 with the two end LEDs dark */
-    const zt = (five ? [1, 3, 5, 8, 10, 12] : [0, 4, 9, 13]).map(n => n / 13);
+    const zc = [C.orange, C.blue];
+    const zt = [0, 0.5, 1];
     zc.forEach((c, z) => {
       const dim = z !== spec.sel;
       s += ringArc(cx, cy, zt[z] + 0.006, zt[z+1] - 0.006,
@@ -46267,7 +46332,7 @@ function labelDisplay([cx, cy], name) {
  * (button 2), "j6" (jack 7), a gesture id, or null for the page overview.
  * Cross-links use "view:index", "b<n>" (1-based, as on the panel), "j:<i>",
  * or "gestures:<id>". */
-const state = { view: "perf", key: null, jacksIn: true };
+const state = { view: "perf", key: null };
 const VIEW_KEYS = Object.keys(VIEWS);
 
 function entityFor(view, key) {
@@ -46334,11 +46399,6 @@ function renderPanel() {
     }
   });
   $("platecap").textContent = v.caption;
-  /* the jack-mode toggle, wherever the choice shows: routing, and the two jacks */
-  $("jacks").classList.toggle("on", state.view === "routing" || state.key === "j2" || state.key === "j7");
-  [...$("jacks").querySelectorAll("button")].forEach(b =>
-    b.setAttribute("aria-pressed", String(+b.dataset.jacks === +state.jacksIn)));
-
   /* hit targets: knobs only where the page gives them meaning */
   const hits = [];
   if (v.knobs) KNOB.forEach((p, i) => hits.push([`k${i}`, p, HIT_R.k, v.knobs[i].l]));
@@ -46423,12 +46483,6 @@ $("Lhit").addEventListener("keydown", ev => {
     ev.preventDefault();
     ev.target.dispatchEvent(new MouseEvent("click", { bubbles: true }));
   }
-});
-$("jacks").addEventListener("click", ev => {
-  const b = ev.target.closest("[data-jacks]");
-  if (!b) return;
-  state.jacksIn = b.dataset.jacks === "1";
-  render();
 });
 $("list").addEventListener("click", ev => {
   const t = ev.target.closest(".ctl");
