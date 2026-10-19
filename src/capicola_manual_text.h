@@ -51,19 +51,19 @@ inline constexpr const char* kPrimaryKnob[6] = {
     "**Unity:** At ¼ and ¾, held by a ±0.03× detent",
     "Playback rate of the keyframe grid. At noon the grid **stops** "
     "instead of crawling. CW runs it forward up to realtime, CCW runs it "
-    "**backward** up to realtime reverse.\n\n**Running out of "
-    "buffer**\n\nThe recorder writes sparse keyframes into a ring buffer "
-    "of fixed size: 2^21 keyframes per channel, about 44 seconds of "
-    "full-rate stereo audio. Only extrema are kept, so in practice it "
-    "holds minutes, and longer at low Quality. If a freeze or a reverse "
-    "leaves the grid behind the oldest keyframe, it jumps back to now "
-    "with a full crossfade rather than a click.\n\n- **Noon:** True "
-    "freeze\n- **Taper:** |u|^2.5 each side; ¾ ≈ 5.7× slower",
+    "**backward** up to realtime reverse.\n\n**Running out of buffer**\n\nThe "
+    "recorder writes sparse keyframes into a ring buffer of fixed size: "
+    "2^21 keyframes per channel, about 44 seconds of full-rate stereo "
+    "audio. Only extrema are kept, so in practice it holds minutes, and "
+    "longer at low Quality. If a freeze or a reverse leaves the grid "
+    "behind the oldest keyframe, it jumps back to now with a full "
+    "crossfade rather than a click.\n\n- **Noon:** True freeze\n- **Taper:** "
+    "|u|^2.5 each side; ¾ ≈ 5.7× slower",
     "How readily a transient triggers a slice. Lower is more sensitive "
     "and slices more often; higher slices less. At the very top, "
-    "auto-slicing is off, and only B2 or Trig In slices.\n\n- **CCW:** "
-    "Most sensitive: the most slices\n- **CW:** Fewer slices\n- **Top:** "
-    "Auto-slicing off\n- **Pip:** Mirrors Trig 1",
+    "auto-slicing is off, and only B2 or a jack assigned to Slice "
+    "slices.\n\n- **CCW:** Most sensitive: the most slices\n- **CW:** Fewer "
+    "slices\n- **Top:** Auto-slicing off\n- **Pip:** Mirrors Slice trigger",
     "How long a grain plays before the head is spliced on: the summed "
     "duration of the next N keyframes, where N is the grain size. It "
     "counts keyframes, not time, so dense material gives short grains and "
@@ -72,15 +72,15 @@ inline constexpr const char* kPrimaryKnob[6] = {
     "from the previous keyframe. Quality sets how much is enough. CW "
     "keeps nearly every extremum; CCW keeps fewer, making the "
     "representation sparser and, in turn, crunchier and more "
-    "lo-fi.\n\nFewer keyframes also means a longer buffer and longer "
-    "freeze times.\n\n- **Pip:** Mirrors Env 1; red on input clip",
+    "lo-fi.\n\nFewer keyframes also means a longer buffer and longer freeze "
+    "times.\n\n- **Pip:** Mirrors Input envelope; red on input clip",
     "The output is fed back into the input, through a saturator and a "
     "tunable state-variable bandpass on the way.\n\nFeedback only bites "
     "near *now*: right after a slice, while the read head is close to the "
     "live input. The further a head lags behind now, the less influence "
     "the feedback has. The tap sits before the mix, so turning Mix down "
-    "doesn't starve the loop.\n\n- **Unity:** At ⅔ of the sweep\n- "
-    "**Pip:** Mirrors Env 2",
+    "doesn't starve the loop.\n\n- **Unity:** At ⅔ of the sweep\n- **Pip:** "
+    "Mirrors Output envelope",
 };
 
 inline constexpr const char* kDepthName[6] = {
@@ -114,23 +114,14 @@ inline constexpr const char* kRouteName[6] = {
 };
 
 inline constexpr const char* kRouteHelp[6] = {
-    "Modulation source for Pitch.\n\nPitch is bipolar, so the bipolar CV "
-    "In can sweep it through noon in both directions.\n\n- **Zones:** In "
-    "Env · Out Env · CV In, + CV 2 · CV 3 with the jacks as inputs",
-    "Modulation source for Stretch.\n\nStretch is bipolar, so the bipolar "
-    "CV In can sweep it through freeze in both directions.\n\n- "
-    "**Zones:** In Env · Out Env · CV In, + CV 2 · CV 3 with the jacks as "
-    "inputs",
-    "Modulation source for Threshold.\n\n- **Zones:** In Env · Out Env · "
-    "CV In, + CV 2 · CV 3 with the jacks as inputs",
-    "Modulation source for Grain Size.\n\n- **Zones:** In Env · Out Env · "
-    "CV In, + CV 2 · CV 3 with the jacks as inputs",
-    "Modulation source for Quality.\n\n- **Zones:** In Env · Out Env · CV "
-    "In, + CV 2 · CV 3 with the jacks as inputs",
+    "Modulation source for Pitch.\n\n- **Zones:** In Env · Out Env",
+    "Modulation source for Stretch.\n\n- **Zones:** In Env · Out Env",
+    "Modulation source for Threshold.\n\n- **Zones:** In Env · Out Env",
+    "Modulation source for Grain Size.\n\n- **Zones:** In Env · Out Env",
+    "Modulation source for Quality.\n\n- **Zones:** In Env · Out Env",
     "Modulation source for Feedback.\n\nThe output follower acts as a "
     "governor here: the louder the output gets, the further the loop gain "
-    "can go before it runs.\n\n- **Zones:** In Env · Out Env · CV In, + "
-    "CV 2 · CV 3 with the jacks as inputs",
+    "can go before it runs.\n\n- **Zones:** In Env · Out Env",
 };
 
 inline constexpr const char* kSecName[6] = {
@@ -150,10 +141,10 @@ inline constexpr const char* kSecHelp[6] = {
     "transients read relative to Threshold.",
     "One knob with three linked consequences: the wet path's **latency**, "
     "the splice **crossfade length**, and the **retrigger floor**. "
-    "Splices can't come faster than one fade.\n\nShort is snappy and "
-    "clicky at high rates. Long gives smeared, washy takeovers that cap "
-    "the splice rate at a few Hz. Changing it never moves a playing "
-    "grain; the new length applies from the next splice on.",
+    "Splices can't come faster than one fade.\n\nShort is snappy and clicky "
+    "at high rates. Long gives smeared, washy takeovers that cap the "
+    "splice rate at a few Hz. Changing it never moves a playing grain; "
+    "the new length applies from the next splice on.",
     "Gain into the keyframe waveshaper. It is applied to the *keyframes "
     "themselves*, before interpolation, so the nonlinearity never sees "
     "the sample rate and can't fold aliases into the band however hard "
@@ -173,34 +164,26 @@ inline constexpr const char* kSecHelp[6] = {
 inline constexpr const char* kRoutingOverview =
     "Each potentiometer is divided into colored segments that set which "
     "source that control's modulation comes from:\n\n- Orange · input "
-    "envelope follower\n- Blue · output envelope follower\n- White · "
-    "external CV input\n- Purple · CV 2, the Trig 1 jack as an input\n- "
-    "Green · CV 3, the Env 1 jack as an input\n\nThe selected segment "
-    "glows with its source's live level, so you can see whether anything "
-    "is arriving. The default is the input follower; how hard each source "
-    "pushes is set on the Depth page.\n\nOut of the box, **Trig 1** and "
-    "**Env 1** are CV inputs, **CV 2** and **CV 3**, and every routing "
-    "knob has two more segments for them, purple and green. Set **Trig 1 "
-    "/ Env 1 Jacks** to Outputs (web programmer, Options) to use them as "
-    "printed. Saved with each preset.";
+    "envelope follower\n- Blue · output envelope follower\n\nThe selected "
+    "segment glows with its source's live level, so you can see whether "
+    "anything is arriving. The default is the input follower; how hard "
+    "each source pushes is set on the Depth page.\n\nAssigned CV is added "
+    "to the internal modulation before the parameter is limited to its "
+    "range.";
 
 inline constexpr const char* kSecondaryOverview =
     "Deeper engine parameters: the envelope followers, overall latency "
     "and fade time, the nonlinear saturators, and more.";
 
 inline constexpr const char* kRoutingPageHelpJson =
-    "[\"Each potentiometer is divided into colored segments that set "
-    "which source that control's modulation comes from:\\n\\n- Orange · "
-    "input envelope follower\\n- Blue · output envelope follower\\n- "
-    "White · external CV input\\n- Purple · CV 2, the Trig 1 jack as an "
-    "input\\n- Green · CV 3, the Env 1 jack as an input\\n\\nThe selected "
+    "[\"Each potentiometer is divided into colored segments that set which "
+    "source that control's modulation comes from:\\n\\n- Orange · input "
+    "envelope follower\\n- Blue · output envelope follower\\n\\nThe selected "
     "segment glows with its source's live level, so you can see whether "
     "anything is arriving. The default is the input follower; how hard "
-    "each source pushes is set on the Depth page.\\n\\nOut of the box, "
-    "**Trig 1** and **Env 1** are CV inputs, **CV 2** and **CV 3**, and "
-    "every routing knob has two more segments for them, purple and green. "
-    "Set **Trig 1 / Env 1 Jacks** to Outputs (web programmer, Options) to "
-    "use them as printed. Saved with each preset.\"]";
+    "each source pushes is set on the Depth page.\\n\\nAssigned CV is added "
+    "to the internal modulation before the parameter is limited to its "
+    "range.\"]";
 
 inline constexpr const char* kSecondaryPageHelpJson =
     "[\"Deeper engine parameters: the envelope followers, overall latency "
@@ -210,8 +193,8 @@ inline constexpr const char* kGesturesOverview =
     "A small set of button moves for saving, loading, flipping direction "
     "and snapping knobs home, and how the panel's lights answer them. "
     "Each works the same on every page.\n\n- **Save**: hold B1 + B2 for "
-    "0.33 s\n- **Load**: hold B2 + B3 for 0.5 s\n- **Factory reset**: "
-    "hold B1 + B3 for 0.5 s\n- **Polarity flip**: hold B2, nudge Pitch or "
+    "0.33 s\n- **Load**: hold B2 + B3 for 0.5 s\n- **Factory reset**: hold "
+    "B1 + B3 for 0.5 s\n- **Polarity flip**: hold B2, nudge Pitch or "
     "Stretch\n- **Shift snap**: hold B3, nudge any knob\n- **Slice**: tap "
     "B2; it fires on release";
 
@@ -227,10 +210,9 @@ inline constexpr const char* kSlicing =
     "fade-length crossfade, and re-anchors the stretch grid from either "
     "direction.\n\nManual and external slices are always accepted, even "
     "with auto-slicing muted at the top of P3. Kept detector events are "
-    "at least 150 ms apart, and nothing splices faster than one "
-    "fade.\n\n- **Auto:** Detected transients above P3\n- **Manual:** B2, "
-    "on release\n- **External:** Trig In rising edge\n- **Reports:** Trig "
-    "1 pulse, B2 dark flash";
+    "at least 150 ms apart.\n\n- **Auto:** Detected transients above P3\n- "
+    "**Manual:** B2, on release\n- **External:** Slice\n- **Reports:** "
+    "Slice trigger out";
 
 inline constexpr const char* kReadingPanel =
     "All three buttons wear the visible page's color, so activity reads "
@@ -238,11 +220,11 @@ inline constexpr const char* kReadingPanel =
     "factory reset confirms with three bright white flashes on all three "
     "buttons.\n\nThe pips at six o'clock under P3–P6 always show the four "
     "followers, on every page and whatever the jacks are set to carry. "
-    "The trigger pips hold for 60 ms, so a 10 ms pulse is easy to "
-    "see.\n\n- **P3 pip:** Slice triggers\n- **P4 pip:** Output "
-    "triggers\n- **P5 pip:** Input envelope; red on input clip\n- **P6 "
-    "pip:** Output envelope\n- **Slice:** B2 blinks dark\n- **Save, load, "
-    "reset:** Three white flashes on all three buttons";
+    "The trigger pips hold for 60 ms, so a 10 ms pulse is easy to see.\n\n- "
+    "**P3 pip:** Slice triggers\n- **P4 pip:** Output triggers\n- **P5 "
+    "pip:** Input envelope; red on input clip\n- **P6 pip:** Output "
+    "envelope\n- **Slice:** B2 blinks dark\n- **Save, load, reset:** Three "
+    "white flashes on all three buttons";
 
 /* Buttons, jacks (panel grid order: top row L→R, then bottom row) */
 inline constexpr const char* kButtonName[3] = {
@@ -268,58 +250,26 @@ inline constexpr const char* kButtonTap[3] = {
 
 inline constexpr const char* kJack[10] = {
     "Left input. The two channels are detected and sliced independently.",
-    "External slice trigger. Every rising edge is taken, even with "
-    "auto-slicing muted at the top of P3. Shares B2's dark flash.\n\n- "
-    "**Fires:** Rising edge, ~+2 V\n- **Re-arms:** ~+1 V",
-    "By default, CV 2: a bipolar CV input with its own segment on every "
-    "routing knob.\n\nSet to Outputs, it pulses once per slice that "
-    "actually happens: detected transients, B2 presses and Trig In edges "
-    "alike. It never fires faster than the detector's 150 ms hold-off, "
-    "and a long fade thins it further, because the fade is also the "
-    "retrigger floor.\n\n- **Default:** CV 2 in, the purple routing "
-    "segment\n- **As output:** 0 / 5 V, 10 ms pulse on every slice\n- "
-    "**Pip:** P3 shows slice triggers",
-    "While Trig 1 and Env 1 are inputs, **Trig 2** and **Env 2** each "
-    "carry any of the four follower signals: input triggers (every "
-    "slice), output triggers, the input envelope or the output envelope "
-    "(web programmer, Options). By default they carry the input triggers "
-    "and the input envelope, so nothing is lost. With Trig 1 / Env 1 set "
-    "to Outputs, all four carry what is printed. The 6pm pips always show "
-    "the followers, whatever the jacks carry.\n\nOutput triggers are a "
-    "pulse on each transient the output follower keeps, with the same 150 "
-    "ms hold-off. They never slice anything.\n\n- **Pulse:** 0 / 5 V, 10 "
-    "ms\n- **Default:** Input triggers: every slice\n- **Pip:** P4 shows "
-    "output triggers",
+    "An incoming trigger starts a new slice.\n\n- **Default:** Slice",
+    "Incoming voltage modulates stretch.\n\n- **Default:** Stretch",
+    "Sends a trigger whenever a slice starts.\n\n- **Default:** Slice "
+    "trigger out",
     "Left output, after the dry/wet mix. There is no dry normalling in "
     "hardware.",
     "Right input.",
-    "The external modulation source, routable to any Primary knob from "
-    "the Routing page. Bipolar, like CV 2 and CV 3 on the Trig 1 and Env "
-    "1 jacks.",
-    "By default, CV 3: a bipolar CV input with its own segment on every "
-    "routing knob.\n\nSet to Outputs, it carries the input follower's "
-    "envelope, the same signal the Routing page offers as a mod "
-    "source.\n\n- **Default:** CV 3 in, the green routing segment\n- **As "
-    "output:** 0 – 5 V input envelope\n- **Pip:** P5 shows the input "
-    "envelope; red on input clip",
-    "While Trig 1 and Env 1 are inputs, **Trig 2** and **Env 2** each "
-    "carry any of the four follower signals: input triggers (every "
-    "slice), output triggers, the input envelope or the output envelope "
-    "(web programmer, Options). By default they carry the input triggers "
-    "and the input envelope, so nothing is lost. With Trig 1 / Env 1 set "
-    "to Outputs, all four carry what is printed. The 6pm pips always show "
-    "the followers, whatever the jacks carry.\n\nThe output envelope is "
-    "taken from the post-mix sum.\n\n- **Default:** Input envelope\n- "
-    "**Pip:** P6 shows the output envelope",
+    "Incoming voltage modulates pitch.\n\n- **Default:** Pitch",
+    "Incoming voltage modulates feedback.\n\n- **Default:** Feedback",
+    "Sends the input envelope from this jack.\n\n- **Default:** Input "
+    "envelope out",
     "Right output, after the dry/wet mix.",
 };
 
 /* Button gestures */
 inline constexpr const char* kGestureReset =
     "Every page returns to its factory defaults, whichever page you're "
-    "on. Your save is untouched, so B2+B3 brings it back.\n\n- "
-    "**Gesture:** Hold B1 + B3 for 0.5 s\n- **Affects:** All four "
-    "pages\n- **Confirms:** Three white flashes";
+    "on. Your save is untouched, so B2+B3 brings it back.\n\n- **Gesture:** "
+    "Hold B1 + B3 for 0.5 s\n- **Affects:** All four pages\n- **Confirms:** "
+    "Three white flashes";
 
 inline constexpr const char* kGestureSave =
     "Saves all four pages as your save point, which is also what the "
@@ -346,9 +296,9 @@ inline constexpr const char* kGestureSnap =
     "Hold SHIFT and nudge any knob, on any page, and it snaps to its "
     "factory default: depths to exactly zero. Nudge back the other way "
     "while still holding and it returns. It's the per-knob factory "
-    "reset.\n\n- **Gesture:** Hold B3 (SHIFT), nudge any knob\n- "
-    "**Where:** Every page\n- **Target:** Factory, or your save point "
-    "(web programmer)";
+    "reset.\n\n- **Gesture:** Hold B3 (SHIFT), nudge any knob\n- **Where:** "
+    "Every page\n- **Target:** Factory, or your save point (web "
+    "programmer)";
 
 /* Shared paragraphs: the presets panel and the Options fields */
 inline constexpr const char* kHistory =
@@ -366,19 +316,101 @@ inline constexpr const char* kSnapTarget =
     "(slot 1), so each knob toggles between where you are and where you "
     "saved. Save point falls back to factory while nothing is saved.";
 
-inline constexpr const char* kJackMode =
-    "Out of the box, **Trig 1** and **Env 1** are CV inputs, **CV 2** and "
-    "**CV 3**, and every routing knob has two more segments for them, "
-    "purple and green. Set **Trig 1 / Env 1 Jacks** to Outputs (web "
-    "programmer, Options) to use them as printed. Saved with each preset.";
+/* Independently assigned J3..J8 functions. Byte order matches jack_routing.h. */
+inline constexpr unsigned kNumJackFunctions = 11;
+inline constexpr const char* kJackId[6] = {
+    "trig.in",
+    "cv.in",
+    "trig.1",
+    "env.1",
+    "trig.2",
+    "env.2",
+};
 
-inline constexpr const char* kJackOuts =
-    "While Trig 1 and Env 1 are inputs, **Trig 2** and **Env 2** each "
-    "carry any of the four follower signals: input triggers (every "
-    "slice), output triggers, the input envelope or the output envelope "
-    "(web programmer, Options). By default they carry the input triggers "
-    "and the input envelope, so nothing is lost. With Trig 1 / Env 1 set "
-    "to Outputs, all four carry what is printed. The 6pm pips always show "
-    "the followers, whatever the jacks carry.";
+inline constexpr const char* kJackPanel[6] = {
+    "J3",
+    "J4",
+    "J5",
+    "J6",
+    "J7",
+    "J8",
+};
+
+inline constexpr const char* kJackFieldId[6] = {
+    "jack.j3.function",
+    "jack.j4.function",
+    "jack.j5.function",
+    "jack.j6.function",
+    "jack.j7.function",
+    "jack.j8.function",
+};
+
+inline constexpr const char* kJackFunctionName[11] = {
+    "Pitch",
+    "Stretch",
+    "Threshold",
+    "Grain Size",
+    "Quality",
+    "Feedback",
+    "Slice",
+    "Input envelope out",
+    "Output envelope out",
+    "Slice trigger out",
+    "Output transient out",
+};
+
+inline constexpr const char* kJackFunctionHelp[11] = {
+    "Incoming voltage modulates pitch.",
+    "Incoming voltage modulates stretch.",
+    "Incoming voltage modulates threshold.",
+    "Incoming voltage modulates grain size.",
+    "Incoming voltage modulates quality.",
+    "Incoming voltage modulates feedback.",
+    "An incoming trigger starts a new slice.",
+    "Sends the input envelope from this jack.",
+    "Sends the output envelope from this jack.",
+    "Sends a trigger whenever a slice starts.",
+    "Sends a trigger when the output detector finds a transient.",
+};
+
+inline constexpr const char* kJackFunctionDispJson =
+    "{\"kind\":\"enum\",\"labels\":[\"Pitch\",\"Stretch\",\"Threshold\",\"Grain "
+    "Size\",\"Quality\",\"Feedback\",\"Slice\",\"Input envelope out\",\"Output "
+    "envelope out\",\"Slice trigger out\",\"Output transient out\"]}";
+
+inline constexpr const char* kJackAssignmentsJson =
+    "{\"version\":1,\"functions\":[{\"name\":\"Pitch\",\"group\":\"CV "
+    "input\",\"direction\":\"in\",\"sig\":\"cv-bi\",\"help\":\"Incoming voltage "
+    "modulates pitch.\"},{\"name\":\"Stretch\",\"group\":\"CV "
+    "input\",\"direction\":\"in\",\"sig\":\"cv-bi\",\"help\":\"Incoming voltage "
+    "modulates stretch.\"},{\"name\":\"Threshold\",\"group\":\"CV "
+    "input\",\"direction\":\"in\",\"sig\":\"cv-bi\",\"help\":\"Incoming voltage "
+    "modulates threshold.\"},{\"name\":\"Grain Size\",\"group\":\"CV "
+    "input\",\"direction\":\"in\",\"sig\":\"cv-bi\",\"help\":\"Incoming voltage "
+    "modulates grain size.\"},{\"name\":\"Quality\",\"group\":\"CV "
+    "input\",\"direction\":\"in\",\"sig\":\"cv-bi\",\"help\":\"Incoming voltage "
+    "modulates quality.\"},{\"name\":\"Feedback\",\"group\":\"CV "
+    "input\",\"direction\":\"in\",\"sig\":\"cv-bi\",\"help\":\"Incoming voltage "
+    "modulates feedback.\"},{\"name\":\"Slice\",\"group\":\"Trigger "
+    "input\",\"direction\":\"in\",\"sig\":\"trig\",\"help\":\"An incoming trigger "
+    "starts a new slice.\"},{\"name\":\"Input envelope out\",\"short\":\"Input "
+    "envelope\",\"group\":\"Envelope "
+    "output\",\"direction\":\"out\",\"sig\":\"cv-uni\",\"help\":\"Sends the input "
+    "envelope from this jack.\"},{\"name\":\"Output envelope "
+    "out\",\"short\":\"Output envelope\",\"group\":\"Envelope "
+    "output\",\"direction\":\"out\",\"sig\":\"cv-uni\",\"help\":\"Sends the output "
+    "envelope from this jack.\"},{\"name\":\"Slice trigger "
+    "out\",\"short\":\"Slice trigger\",\"group\":\"Trigger "
+    "output\",\"direction\":\"out\",\"sig\":\"trig\",\"help\":\"Sends a trigger "
+    "whenever a slice starts.\"},{\"name\":\"Output transient "
+    "out\",\"short\":\"Output transients\",\"group\":\"Trigger "
+    "output\",\"direction\":\"out\",\"sig\":\"trig\",\"help\":\"Sends a trigger when "
+    "the output detector finds a "
+    "transient.\"}],\"jacks\":[{\"id\":\"trig.in\",\"panel\":\"J3\",\"field\":\"jack.j3."
+    "function\"},{\"id\":\"cv.in\",\"panel\":\"J4\",\"field\":\"jack.j4.function\"},{\"i"
+    "d\":\"trig.1\",\"panel\":\"J5\",\"field\":\"jack.j5.function\"},{\"id\":\"env.1\",\"p"
+    "anel\":\"J6\",\"field\":\"jack.j6.function\"},{\"id\":\"trig.2\",\"panel\":\"J7\",\"f"
+    "ield\":\"jack.j7.function\"},{\"id\":\"env.2\",\"panel\":\"J8\",\"field\":\"jack.j8"
+    ".function\"}]}";
 
 } // namespace manual_text

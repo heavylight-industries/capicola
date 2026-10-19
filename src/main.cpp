@@ -24,9 +24,7 @@
  * next press of the same button advances within the group.
  *
  *   Depth:     pot i = bipolar depth (−1..+1) for pot i's modulation.
- *   Routing:   pot i = 3-zone source selector — input follower (orange, default)
- *              / output follower (blue) / CV IN (white), and CV 2 (purple) /
- *              CV 3 (green) with Trig 1 / Env 1 flipped; zone-granular catch.
+ *   Routing:   pot i selects the input or output envelope follower.
  *   Secondary: envelope smoothing, fade time, keyframe drive, drive
  *              character, MIX dry/wet, feedback bandpass — each with its own
  *              pot-catch.
@@ -55,14 +53,10 @@
  * doesn't page on release.
  *
  *
- * Panel jacks (2×5, panel-final names, code indices in parens):
- *   INL   TRIG IN (cv[0])   TRIG 1·slice (jacks[2])   TRIG 2·out-event (jacks[4])   OUTL
- *   INR   CV IN   (cv[1])   ENV 1·in-env   (jacks[3])   ENV 2·out-env   (jacks[5])   OUTR
- * TRIG IN = external slice trigger (rising edge, always accepted). CV IN = the
- * single external mod CV (eurorack-bipolar). Trig outs are 10 ms 0/5 V pulses,
- * one per event, never closer than the detector's 150 ms hold-off; envelopes
- * are 0..1 → 0..5 V. Same physical channels as the old CV1..CV6 map — only the
- * roles/names changed.
+ * Panel jacks J3..J8 are independently assigned in Options. Each accepts
+ * any Primary CV destination or Slice, or sends either envelope or trigger
+ * signal. CV inputs add to internal modulation before the final knob clamp.
+ * Trigger outputs are 10 ms 0/5 V pulses; envelopes span 0..5 V.
  *
  * Fade (= latency = retrigger floor) is the secondary page's P2, boot 20 ms.
  * The SDK's ControlLoop owns polling, pot-catch (Pager), CV dispatch, and ring
@@ -86,6 +80,8 @@
 
 #include "hardware.h"
 #include "git_stamp.h"                   /* CAPICOLA_GIT_HASH, per build */
+#include "control_values.h"
+#include "save_history.h"
 #include "jack_routing.h"                /* which signal drives which CV jack */
 #include "capicola_manual_text.h"        /* knob names — generated from docs/manual.html */
 #include "audio_engine.h"
@@ -104,13 +100,10 @@ using SerialLog = daisy::Logger<daisy::LOGGER_EXTERNAL>;
 static constexpr LedPanel::Rgb kBlue   = {30, 110, 255};   // routing page / out-follower
 static constexpr LedPanel::Rgb kIce    = {150, 210, 255};  // perf bipolar negative
 static constexpr LedPanel::Rgb kOrange = {255, 110, 15};   // perf page / in-follower
-static constexpr LedPanel::Rgb kViolet = {160, 40, 255};   // CV 2 — the Trig 1 jack as an input
 static constexpr LedPanel::Rgb kCenter = {90, 90, 90};     // bipolar zero
 static constexpr LedPanel::Rgb kWhite  = {255, 255, 255};
 static constexpr LedPanel::Rgb kPink   = {255, 60, 150};   // depth page / positive depth
 static constexpr LedPanel::Rgb kTeal   = {0, 220, 200};    // secondary page
-static constexpr LedPanel::Rgb kGreen  = {20, 255, 40};    // CV 3 — the Env 1 jack as an input
-static constexpr LedPanel::Rgb kCvWhite = {255, 225, 190}; // CV IN — warm, a full-RGB white reads blue
 
 /* Mode color: worn by all three buttons, one hue per page. Activity flashes OFF.
  * B1 pages are warm, B3 pages cool. */
@@ -182,53 +175,41 @@ static TrigOut trig2;   // TRIG 2 — kept output-follower transients
 static AlchemyLabV2                 hw;
 static AlchemyLabAudio::AudioEngine engine;
 
-/* Trig 1 / Env 1 as CV inputs (CV 2, CV 3), and what Trig 2 / Env 2 carry
- * then (jack_routing.h). Options fields, so they ride presets; OnPoll applies
- * them to the jacks whenever they change, whoever changed them. */
+/* Six saved assignments, applied by the 1 ms control poll. */
 static jacks::Options jackOpts;
+static jacks::OutputDriver jackOutputs;
+static jacks::SliceInputs sliceInputs;
 
-/* ── Mod routing (replaces CvMatrix) ─────────────────────────────────────
- * Each perf pot picks its modulation source — input follower, output follower,
- * the CV IN jack, and with the jacks flipped, CV 2 and CV 3 — and takes its
- * bipolar depth from the depth view. A CvSource because two of the sources are
- * internal engine signals. */
+static float InternalDepth(uint8_t pot);
+static uint8_t InternalSource(uint8_t pot);
+
+/* Internal envelope routing remains per destination. Assigned external CV is
+ * summed with source * depth; the VirtualKnob applies the final range limit. */
 class ModRouter : public CvSource
 {
   public:
-    static constexpr uint8_t kSrcInEnv  = 0;
+    static constexpr uint8_t kSrcInEnv = 0;
     static constexpr uint8_t kSrcOutEnv = 1;
-    static constexpr uint8_t kSrcCv     = 2;   // panel CV IN (cv[1])
-    static constexpr uint8_t kSrcCv2    = 3;   // Trig 1 jack as input (cv[2])
-    static constexpr uint8_t kSrcCv3    = 4;   // Env 1 jack as input (cv[3])
-    static constexpr uint8_t kNumSrc    = 5;
-
-    void SetDepth (uint8_t pot, float d)   { if (pot < NUM_POTS) depth[pot] = d; }
-    void SetSource(uint8_t pot, uint8_t s) { if (pot < NUM_POTS) src[pot]   = s; }
+    static constexpr uint8_t kNumSrc = 2;
 
     float DeltaAtPage(uint8_t page, uint8_t pot) const override
     {
-        return (page == 0 && pot < NUM_POTS) ? delta[pot] : 0.0f;
+        return page == 0 && pot < NUM_POTS
+            ? mixer.Delta(pot, InternalDepth(pot), InternalSource(pot)) : 0.0f;
     }
-
-    void Update(const float* cv, uint32_t) override
+    void Update(const float*, uint32_t) override
     {
-        sig[kSrcInEnv]  = engine.EnvNormIn();         // unipolar 0..1
-        sig[kSrcOutEnv] = engine.EnvNormOut();
-        sig[kSrcCv]     = (cv[1] - 0.5f) * 2.0f;      // bipolar ±1
-        sig[kSrcCv2]    = jackOpts.cvIn ? (cv[2] - 0.5f) * 2.0f : 0.0f;
-        sig[kSrcCv3]    = jackOpts.cvIn ? (cv[3] - 0.5f) * 2.0f : 0.0f;
-        for (uint8_t p = 0; p < NUM_POTS; p++)
-            delta[p] = depth[p] * sig[src[p] < kNumSrc ? src[p] : kSrcInEnv];
+        jacks::Signals signals;
+        signals.inEnv = engine.EnvNormIn();
+        signals.outEnv = engine.EnvNormOut();
+        float volts[jacks::kNumJacks];
+        jackOutputs.ReadInputs(hw, volts);
+        mixer.Update(jackOpts, volts, signals);
     }
-
-    /* Live value of a source, for the routing rings and the pips. */
-    float Signal(uint8_t s) const { return (s < kNumSrc) ? sig[s] : 0.0f; }
+    float Signal(uint8_t source) const { return mixer.Signal(source); }
 
   private:
-    float   sig  [kNumSrc]  = {};
-    float   depth[NUM_POTS] = {};
-    uint8_t src  [NUM_POTS] = {};   // defaults to input follower
-    float   delta[NUM_POTS] = {};
+    jacks::ModulationMixer mixer;
 };
 
 static ModRouter modRouter;
@@ -470,23 +451,10 @@ VirtualKnob cvDepth6 = VirtualKnob(5, manual_text::kDepthName[5])
     .Ident("depth.p6")
     .Linear(-1.f, +1.f).Ring(Bipolar(kPink, kOrange, kCenter)).Overdraw(DrawDepthGlow);
 
-/* ── Mod routing view (B3 page 0; not a pager page) ──────────────────────
- * Zone source selector per pot: input follower / output follower / CV IN, and
- * CV 2 / CV 3 when Trig 1 and Env 1 are flipped to inputs (CCW→CW). The ring
- * shows every zone in its color, the selected one lit by its source's live
- * level; the dim zones double as the position map. No catch pip — but catch
- * is zone-granular: a pot decouples on entry and re-locks the moment it sits
- * inside its stored zone. */
-
+/* Internal follower source selector, with zone-granular pot catch. */
 static constexpr uint8_t kMaxSrcZones = ModRouter::kNumSrc;
-/* CCW → CW, alternating the most different hues so neighbours never blur
- * through the panel's diffusion. */
-static constexpr LedPanel::Rgb kSrcColors[kMaxSrcZones] = {kOrange, kBlue,
-                                                           kCvWhite, kViolet,
-                                                           kGreen};
-
-/* Three zones, or five with the jacks flipped to inputs. */
-static uint8_t NumZones() { return jackOpts.cvIn ? kMaxSrcZones : 3; }
+static constexpr LedPanel::Rgb kSrcColors[kMaxSrcZones] = {kOrange, kBlue};
+static uint8_t NumZones() { return kMaxSrcZones; }
 
 static int ZoneOf(float v)
 {
@@ -495,8 +463,7 @@ static int ZoneOf(float v)
     return (z > n - 1) ? n - 1 : (z < 0) ? 0 : z;
 }
 
-/* A stored CV 2/3 zone falls back to the input follower while the jacks are
- * outputs. The stored zone itself is kept, so flipping back restores it. */
+/* Invalid zones fall back to the input follower. */
 static uint8_t EffectiveZone(uint8_t z) { return (z < NumZones()) ? z : 0; }
 
 #ifndef CAPICOLA_BENCH_LOG
@@ -571,6 +538,18 @@ class RoutingStore : public Serializable
 };
 
 static RoutingStore routing;
+
+static float InternalDepth(uint8_t pot)
+{
+    VirtualKnob* const depth[] = {&cvDepth1, &cvDepth2, &cvDepth3,
+                                 &cvDepth4, &cvDepth5, &cvDepth6};
+    return pot < NUM_POTS ? depth[pot]->Value() : 0.0f;
+}
+
+static uint8_t InternalSource(uint8_t pot)
+{
+    return pot < NUM_POTS ? EffectiveZone(routing.zone[pot]) : 0;
+}
 static bool         routeCaught[NUM_POTS] = {};
 
 /* B3 page group: latched, remembers its page independently of B1. */
@@ -591,14 +570,11 @@ static void DrawRouteRing(uint8_t pot, uint8_t sel, float level)
 {
     /* Orange gets a higher dim floor: its low G/B channels quantize away and it
      * reads dimmer than its neighbors at equal scale. */
-    static constexpr float kZoneDim[kMaxSrcZones] = {0.12f, 0.06f, 0.06f, 0.06f, 0.06f};
+    static constexpr float kZoneDim[kMaxSrcZones] = {0.12f, 0.06f};
     static constexpr float kSelFloor = 0.25f;
-    /* Five zones leave the two end LEDs dark for contrast: 2|2|3|2|2, the
-     * middle one taking the noon LED so the map stays symmetric. */
+    /* Six LEDs per source, with a dark center separating the two halves. */
     static constexpr uint8_t kOff = 0xFF;
-    static constexpr uint8_t kLed3[13] = {0,0,0,0, 1,1,1,1,1, 2,2,2,2};               // 4|5|4
-    static constexpr uint8_t kLed5[13] = {kOff, 0,0, 1,1, 2,2,2, 3,3, 4,4, kOff};    // 2|2|3|2|2
-    const uint8_t* led = jackOpts.cvIn ? kLed5 : kLed3;
+    static constexpr uint8_t led[13] = {0,0,0,0,0,0,kOff,1,1,1,1,1,1};
     if (level < 0.0f) level = 0.0f; else if (level > 1.0f) level = 1.0f;
     for (int s = 0; s <= 12; s++)
     {
@@ -643,7 +619,7 @@ static char DSY_SDRAM_BSS hostRefresh   [64 * 1024];   // a refresh rebuilds int
 void DescribeJacks(hostlink::Host& host, const jacks::Options& o);
 
 hostlink::Host host(presets, "capicola", "Capicola",
-                           "1.2.0", CAPICOLA_GIT_HASH);
+                           "1.12.0", CAPICOLA_GIT_HASH);
 
 /* src/capicola_manual.cpp — attaches the firmware-authored manual (prose,
  * jacks, buttons) to the descriptor. Called before BootLoad() brings USB up. */
@@ -822,16 +798,6 @@ extern const char* const kOptSnapId;
 extern const char* const kOptSnapName;
 extern const char* const kOptSnapDisp;
 extern const char* const kOptSnapHelp;
-extern const char* const kOptJacksId;
-extern const char* const kOptJacksName;
-extern const char* const kOptJacksDisp;
-extern const char* const kOptJacksHelp;
-extern const char* const kOptTrig2Id;
-extern const char* const kOptTrig2Name;
-extern const char* const kOptEnv2Id;
-extern const char* const kOptEnv2Name;
-extern const char* const kOptOutDisp;
-extern const char* const kOptOutsHelp;
 #endif
 
 /* Settings with no knob, edited from the web programmer. They ride the preset
@@ -840,7 +806,7 @@ class OptionsStore : public Serializable
 {
   public:
     uint8_t snapToSaved = 0;   // SHIFT snap target: 0 = factory, 1 = the save point
-                               // bytes 1..3: jackOpts (file scope — ModRouter reads it)
+                               // bytes 1..6: one function per jack, in J3..J8 order
 
     size_t SerializedSize() const override { return 1 + jacks::kBytes; }
     void   Serialize(uint8_t* out) const override
@@ -854,28 +820,29 @@ class OptionsStore : public Serializable
         jackOpts    = jacks::Decode(in + 1);
         return true;
     }
-    uint32_t SchemaHash() const override { return 0x4F505433u; }
+    uint32_t SchemaHash() const override { return jacks::kSchemaHash; }
 
 #ifndef CAPICOLA_BENCH_LOG
     bool Describe(hostlink::ComponentWriter& w) const override
     {
         w.Ident("options").Label("Options");
-        /* Each option links to what it acts on; the jacks link back. */
-        static const SeeRef kSnapSee [2] = {SeeRef("b3"), SeeRef("presets")};
-        static const SeeRef kJacksSee[2] = {SeeRef("trig.1"), SeeRef("env.1")};
-        static const SeeRef kTrig2See[2] = {SeeRef("trig.2"), SeeRef("opt.jacks")};
-        static const SeeRef kEnv2See [2] = {SeeRef("env.2"), SeeRef("opt.jacks")};
-        return w.Field(kOptSnapId, kOptSnapName, 0, hostlink::FieldType::Enum,
-                       0.0f, kOptSnapDisp, 2u, -1, -1, kOptSnapHelp, kSnapSee, 2)
-            && w.Field(kOptJacksId, kOptJacksName, 1, hostlink::FieldType::Enum,
-                       jacks::Options{}.cvIn ? 1.0f : 0.0f, kOptJacksDisp, 2u,
-                       -1, -1, kOptJacksHelp, kJacksSee, 2)
-            && w.Field(kOptTrig2Id, kOptTrig2Name, 2, hostlink::FieldType::Enum,
-                       (float)jacks::Options{}.trig2, kOptOutDisp, jacks::kNumSignals,
-                       -1, -1, kOptOutsHelp, kTrig2See, 2)
-            && w.Field(kOptEnv2Id, kOptEnv2Name, 3, hostlink::FieldType::Enum,
-                       (float)jacks::Options{}.env2, kOptOutDisp, jacks::kNumSignals,
-                       -1, -1, kOptOutsHelp, kEnv2See, 2);
+        static_assert(jacks::kNumFunctions == manual_text::kNumJackFunctions);
+        static const SeeRef kSnapSee[2] = {SeeRef("b3"), SeeRef("presets")};
+        if (!w.Meta("jackAssignments", manual_text::kJackAssignmentsJson)
+            || !w.Field(kOptSnapId, kOptSnapName, 0, hostlink::FieldType::Enum,
+                        0.0f, kOptSnapDisp, 2u, -1, -1, kOptSnapHelp, kSnapSee, 2))
+            return false;
+        const jacks::Options defaults;
+        for (uint8_t j = 0; j < jacks::kNumJacks; ++j)
+        {
+            const SeeRef see[] = {SeeRef(manual_text::kJackId[j])};
+            if (!w.Field(manual_text::kJackFieldId[j], manual_text::kJackPanel[j], j + 1,
+                         hostlink::FieldType::Enum, defaults.function[j],
+                         manual_text::kJackFunctionDispJson, jacks::kNumFunctions,
+                         -1, -1, nullptr, see, 1))
+                return false;
+        }
+        return true;
     }
 #endif
 };
@@ -976,22 +943,12 @@ static void NameThisSave()
 static bool SaveToHistory()
 {
     static uint8_t DSY_SDRAM_BSS buf[kPresetBlobCapacity];
-    if (presets.InfoFor(0).valid)
-    {
-        uint8_t  dst    = 0;
-        uint32_t oldest = 0xFFFFFFFFu;
-        for (uint8_t i = 1; i < Presets::kNumSlots; i++)
-        {
-            const Presets::SlotInfo h = presets.InfoFor(i);
-            if (!h.valid) { dst = i; break; }        // an empty slot first
-            if (h.seq < oldest) { oldest = h.seq; dst = i; }
-        }
-        uint32_t schema = 0;
-        uint16_t total  = 0;
-        if (presets.ReadSlotBytes(0, 0, buf, sizeof(buf), &schema, &total) >= 0)
-            presets.WriteSlotRaw(dst, schema, buf, total);
-    }
-    return presets.Save(0);
+    char previousName[PresetName::kCapacity] = {};
+    if (presetName) std::memcpy(previousName, presetName->Get(), sizeof(previousName));
+    NameThisSave();
+    if (history::Save(presets, buf, sizeof(buf))) return true;
+    if (presetName) presetName->Set(previousName);
+    return false;
 }
 
 /* Secondary ring: a level arc (dim while uncaught) plus a bright catch pip. */
@@ -1210,6 +1167,23 @@ static void OnFrame()
         prev = b3HoldArmed;
     }
 
+    /* Routing view open: pots edit the stored zones with zone-granular catch —
+     * a pot decouples on entry and re-locks the moment it sits inside its
+     * stored zone. The pager page underneath is re-locked every frame so those
+     * primaries can't catch while their pots are steering zones. */
+    if (RoutingOpen())
+    {
+        const float* ph = loop.Phys();
+        for (uint8_t p = 0; p < NUM_POTS; p++)
+        {
+            const uint8_t z = (uint8_t)ZoneOf(ph[p]);
+            if (!routeCaught[p] && z == EffectiveZone(routing.zone[p]) && !b3HoldArmed)
+                routeCaught[p] = true;
+            if (routeCaught[p])
+                routing.zone[p] = z;
+        }
+    }
+
     /* Pitch carries the same B2 gesture as Stretch. Value() is the modulated
      * speed; the gesture works in norms, and the map is linear, so convert. */
     {
@@ -1219,8 +1193,7 @@ static void OnFrame()
         engine.SetSlicePitch((eff < 0.5f) ? -pitchG.liveMag : pitchG.liveMag);
     }
 
-    /* Secondary page open: skip the primaries so the two layers don't fight. */
-    if (!SecondaryOpen())
+    /* Primary modulation stays live while editing secondary settings. */
     {
         /* P2 carries the same B2 gesture as P1: hold to flip the grid's
          * direction at a constant stretch, release and the knob is page-
@@ -1242,13 +1215,6 @@ static void OnFrame()
         engine.SetFeedback (feedback.Value());     // filtered feedback
     }
 
-    modRouter.SetDepth(0, cvDepth1.Value());
-    modRouter.SetDepth(1, cvDepth2.Value());
-    modRouter.SetDepth(2, cvDepth3.Value());
-    modRouter.SetDepth(3, cvDepth4.Value());
-    modRouter.SetDepth(4, cvDepth5.Value());
-    modRouter.SetDepth(5, cvDepth6.Value());
-
     /* Polarity flips land in the pager; P1/P2's rings read its catch back. */
     for (uint8_t p = 0; p < 2; p++)
     {
@@ -1256,31 +1222,13 @@ static void OnFrame()
         if (g.commit)
         {
             g.commit = false;
-            pager.SetStored(0, p, g.heldNorm, loop.Phys());
+            const float base = controls::BaseForEffective(
+                g.heldNorm, modRouter.DeltaAtPage(0, p));
+            pager.SetStored(0, p, base, loop.Phys());
         }
         g.view.stored = pager.Stored(0, p);
         g.view.caught = (pager.Page() == 0) ? pager.Caught(p) : true;
     }
-
-    /* Routing view open: pots edit the stored zones with zone-granular catch —
-     * a pot decouples on entry and re-locks the moment it sits inside its
-     * stored zone. The pager page underneath is re-locked every frame so those
-     * primaries can't catch while their pots are steering zones. */
-    if (RoutingOpen())
-    {
-        const float* ph = loop.Phys();
-        for (uint8_t p = 0; p < NUM_POTS; p++)
-        {
-            const uint8_t z = (uint8_t)ZoneOf(ph[p]);
-            if (!routeCaught[p] && z == EffectiveZone(routing.zone[p]) && !b3HoldArmed)
-                routeCaught[p] = true;
-            if (routeCaught[p])
-                routing.zone[p] = z;
-        }
-    }
-
-    for (uint8_t p = 0; p < NUM_POTS; p++)
-        modRouter.SetSource(p, EffectiveZone(routing.zone[p]));
 
 #ifdef CAPICOLA_BENCH_LOG
     /* ~1 Hz audio-CPU + raw-CV report over USB serial (cv in milliunits, 500 ≈
@@ -1303,9 +1251,7 @@ static void OnFrame()
 #endif
 }
 
-/* 1 ms poll: B2 force trigger, B3 tap/hold tracking + the four CV outs. Trig
- * outs sit on the MCP4728 (I²C) so they write only on pulse edges; envelope
- * outs sit on the STM DAC and stream every poll. */
+/* 1 ms poll: panel gestures, six slice inputs, and the six assigned outputs. */
 static uint32_t sliceFlashMs = 0;   // last button-originated trigger
 
 static void OnPoll(uint32_t t_ms)
@@ -1334,12 +1280,8 @@ static void OnPoll(uint32_t t_ms)
     if (b1 && b2 && !b3 && !b2HoldArmed)
     {
         pager.ConsumeButton();   // B1 is the pager now — eat its release
-        if (++saveHoldMs == kSaveHoldMs)
-        {
-            NameThisSave();
-            SaveToHistory();
+        if (++saveHoldMs == kSaveHoldMs && SaveToHistory())
             ConfirmFlash();
-        }
     }
     else
         saveHoldMs = 0;
@@ -1410,21 +1352,18 @@ static void OnPoll(uint32_t t_ms)
         b2HoldMs    = 0;
     }
 
-    /* TRIG IN (cv[0]) = external slice trigger, always accepted. Rising edge
-     * with hysteresis: fire above ~+2 V, re-arm below ~+1 V. Shares the B2
-     * dark-flash so the panel confirms external hits too. */
+    /* Every jack assigned Slice has its own rising-edge detector. A newly
+     * selected input must settle and go low before a high can slice. */
     {
-        static bool trigArmed = true;
-        const float trig = (loop.Cv()[0] - 0.5f) * 2.0f;   // bipolar ±1 ≈ ±5 V
-        if (trigArmed && trig > 0.4f)
+        bool ready[jacks::kNumJacks];
+        float volts[jacks::kNumJacks];
+        jackOutputs.ReadInputs(hw, volts, ready);
+        if (sliceInputs.Poll(jackOpts, volts, ready))
         {
-            trigArmed = false;
             engine.TriggerSlice();
             trig1.Fire(t_ms);
             sliceFlashMs = t_ms;
         }
-        else if (!trigArmed && trig < 0.2f)
-            trigArmed = true;
     }
 
     /* B3 rotates its own page group on release: first press opens on the
@@ -1474,36 +1413,12 @@ static void OnPoll(uint32_t t_ms)
         b1Chorded = false;
     }
 
-    /* Trig 1 / Env 1 direction follows the option, whoever set it — panel
-     * load, boot, or the programmer. Every output is rewritten from scratch
-     * after a change. */
-    static bool  jacksApplied = false;
-    static float written[jacks::kNumJacks] = {-1.0f, -1.0f, -1.0f, -1.0f};
-    if (jackOpts.cvIn != jacksApplied)
-    {
-        jacksApplied = jackOpts.cvIn;
-        if (jackOpts.cvIn)
-        {
-            hw.cv_jacks[2].DisableCvOutput();   // TRIG 1 → CV 2
-            hw.cv_jacks[3].DisableCvOutput();   // ENV 1  → CV 3
-        }
-        else
-        {
-            hw.cv_jacks[2].SetVolts(0.0f);
-            hw.cv_jacks[3].SetVolts(0.0f);
-            hw.cv_jacks[2].EnableCvOutput();
-            hw.cv_jacks[3].EnableCvOutput();
-        }
-        for (float& w : written) w = -1.0f;
-    }
-
 #ifndef CAPICOLA_BENCH_LOG
     /* The programmer names each jack by its current role: republish the jacks
      * and refresh the descriptor whenever the jack options change. */
     {
         static jacks::Options described;   // DescribeManual published the factory roles
-        if (jackOpts.cvIn != described.cvIn || jackOpts.trig2 != described.trig2
-            || jackOpts.env2 != described.env2)
+        if (jackOpts != described)
         {
             described = jackOpts;
             DescribeJacks(host, jackOpts);
@@ -1525,17 +1440,7 @@ static void OnPoll(uint32_t t_ms)
     sig.outEnv  = engine.EnvNormOut();
     const jacks::Plan plan = jacks::Route(jackOpts, sig);
 
-    /* Trig 1, Env 1 and Trig 2 sit on the I²C MCP4728 — write only on a real
-     * change (a trigger edge is 5 V). Env 2 is the STM32 DAC and streams. */
-    CvJack* const out[jacks::kNumJacks] = {&hw.cv_jacks[2], &hw.cv_jacks[3],
-                                           &hw.cv_jacks[4], &hw.cv_jacks[5]};
-    for (uint8_t j = 0; j < jacks::kNumJacks; j++)
-    {
-        if (!plan.output[j]) continue;
-        if (j != jacks::kEnv2 && std::fabs(plan.volts[j] - written[j]) <= 0.02f) continue;
-        written[j] = plan.volts[j];
-        out[j]->SetVolts(plan.volts[j]);
-    }
+    jackOutputs.Apply(hw, plan);
 }
 
 /* Always-on layer, drawn last every frame regardless of page:
@@ -1614,12 +1519,8 @@ int main(void) {
     hw.Init(daisy::SaiHandle::Config::SampleRate::SAI_48KHZ, AUDIO_BLOCK_SAMPLES);
     engine.Init();
 
-    /* CV IO: left column = inputs (trig top, mod bottom); trigger outs across the
-     * top row, envelope outs across the bottom. */
-    hw.cv_jacks[2].EnableCvOutput();   // panel CV2 — slice trigger
-    hw.cv_jacks[4].EnableCvOutput();   // panel CV3 — output-follower trigger
-    hw.cv_jacks[3].EnableCvOutput();   // panel CV5 — input-follower envelope
-    hw.cv_jacks[5].EnableCvOutput();   // panel CV6 — output-follower envelope
+    /* All CV switches boot as inputs. The first control poll stages the
+     * selected output voltages before connecting any output jack. */
 
     /* Seed musical defaults (stored norms); pots stay uncaught until the knob
      * sweeps through the stored value. */
