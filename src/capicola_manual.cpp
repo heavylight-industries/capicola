@@ -85,14 +85,15 @@ static VirtualButton b3 = VirtualButton(kButtonB3, manual_text::kButtonName[2])
     .Ident("b3")
     .Role(VirtualButton::Role::Modal)
     .Action("click", "Routing / Secondary")
-    .Action("hold", "Shift: snap knobs to their target");
+    .Action("hold", "Control all on Routing and Depth; elsewhere Shift, snap knobs to their target");
 
 /* ── Routing-page fields ──────────────────────────────────────────────────
  * RoutingStore (main.cpp) emits these as enum fields; the words live here
  * with the rest of the manual. Zone order matches kSrcColors / ZoneOf(). */
 
 extern const char* const kRouteDispJson =
-    "{\"kind\":\"enum\",\"labels\":[\"In Env\",\"Out Env\",\"CV In\",\"CV 2\",\"CV 3\"]}";
+    "{\"kind\":\"enum\",\"labels\":[\"TKEO\",\"TKEO out\",\"CV In\",\"CV 2\",\"CV 3\",\"Pulses\",\"Contour\","
+    "\"Pulses out\",\"Contour out\"]}";   // (by source id, ModRouter)
 
 extern const char* const kRouteFieldId[6] = {
     "route.p1", "route.p2", "route.p3", "route.p4", "route.p5", "route.p6",
@@ -133,7 +134,7 @@ extern const char* const kSecFieldDisp[6] = {
     "{\"kind\":\"linear\",\"lo\":0.5,\"hi\":4}",
     "{\"kind\":\"linear\",\"lo\":0,\"hi\":1}",
     "{\"kind\":\"norm\"}",
-    "{\"kind\":\"exp\",\"lo\":48,\"hi\":21600,\"unit\":\"Hz\"}",
+    "{\"kind\":\"exp\",\"lo\":100,\"hi\":21600,\"unit\":\"Hz\"}",
 };
 
 extern const char* const kSecFieldHelp[6] = {
@@ -152,7 +153,8 @@ extern const char* const kOptSnapHelp = manual_text::kSnapTarget;
 extern const char* const kOptJacksId   = "opt.jacks";
 extern const char* const kOptJacksName = "Trig 1 / Env 1 Jacks";
 extern const char* const kOptJacksDisp =
-    "{\"kind\":\"enum\",\"labels\":[\"Outputs\",\"CV inputs\"]}";
+    "{\"kind\":\"enum\",\"labels\":[\"Outputs\",\"CV inputs\",\"Outputs, output follower in the mods\","
+    "\"CV inputs, output follower in the mods\"]}";
 extern const char* const kOptJacksHelp = manual_text::kJackMode;
 
 /* Trig 2 / Env 2 in CV-input mode. Label order = jacks::Signal. */
@@ -162,7 +164,7 @@ extern const char* const kOptEnv2Id    = "opt.env2";
 extern const char* const kOptEnv2Name  = "Env 2 Jack";
 extern const char* const kOptOutDisp =
     "{\"kind\":\"enum\",\"labels\":[\"Input triggers\",\"Output triggers\","
-    "\"Input envelope\",\"Output envelope\"]}";
+    "\"Input envelope\",\"Output envelope\",\"Input contour\",\"Output contour\",\"Input pulses\",\"Output pulses\"]}";
 extern const char* const kOptOutsHelp = manual_text::kJackOuts;
 
 /* ── Module-level manual ──────────────────────────────────────────────── */
@@ -174,7 +176,7 @@ static Manual manual =
         .Tagline(manual_text::kTagline)
         .Preamble(manual_text::kPreamble)
         .Section("routing",   "Routing",   manual_text::kRoutingOverview)
-        .Section("secondary", "Secondary", manual_text::kSecondaryOverview)
+        .Section("secondary", "Engine settings", manual_text::kSecondaryOverview)
         .Section("gestures",  "Gestures",  manual_text::kGesturesOverview)
         .Section("catch",     "Pot Catch", manual_text::kPotCatch)
         .Section("slicing",   "Slicing",   manual_text::kSlicing)
@@ -243,9 +245,11 @@ void AttachManualHelp()
  * follower jacks are exactly as printed, whatever the Trig 2 / Env 2 choices. */
 void DescribeJacks(hostlink::Host& host, const jacks::Options& o)
 {
-    auto env = [](uint8_t s) { return s == jacks::kInEnv || s == jacks::kOutEnv; };
-    const bool t2env = o.cvIn && env(o.trig2);
-    const bool e2env = !o.cvIn || env(o.env2);
+    auto env = [](uint8_t s) { return s == jacks::kInEnv || s == jacks::kOutEnv
+                                   || s == jacks::kInCont || s == jacks::kOutCont
+                                   || s == jacks::kInPuls || s == jacks::kOutPuls; };   // (CVs, not triggers)
+    const bool t2env = env(o.trig2);   // (Trig 2 / Env 2 carry their picks in either mode)
+    const bool e2env = env(o.env2);
     published[0] = in_l;
     published[1] = in_r;
     published[2] = trig_in;

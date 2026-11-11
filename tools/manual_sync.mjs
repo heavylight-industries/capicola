@@ -101,8 +101,11 @@ many("kDepthKnob", V.depth.knobs.map(knob));
 out.push("/* Routing and Secondary are preset components: per-field names and help */");
 names("kRouteName", V.routing.knobs.map(k => k.l));
 many("kRouteHelp", V.routing.knobs.map(knob));
-names("kSecName", V.secondary.knobs.map(k => k.l));
-many("kSecHelp", V.secondary.knobs.map(knob));
+// The Secondary store's sixth field (sec.fbtone) is turned on the Comb page (its P2): its name and help come from
+// there, so the programmer still names it.
+const secField = V.secondary.knobs.map((k, i) => (i === 5 ? V.diffusion.knobs[1] : k));
+names("kSecName", secField.map(k => k.l));
+many("kSecHelp", secField.map(knob));
 out.push("/* Manual sections: the overviews with no entity to hang on, and the\n" +
          " * gestures that belong to no button. */");
 one("kRoutingOverview", V.routing.overview);

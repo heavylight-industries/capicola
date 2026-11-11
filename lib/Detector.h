@@ -19,8 +19,20 @@ namespace capicola {
 // smoothed envelope STREAM (kAvgSec), not of the peak events. The stream
 // average is time-indexed — silence pulls it down — so an isolated hit after a
 // gap towers over the reference and passes. Event density is set upstream by
-// the smoothing cutoff (raw TKEO = dense bursts; lower cutoff merges peaks) and
-// capped by kMinGapSec, a hold-off between kept events.
+// the smoothing cutoff (raw TKEO = dense bursts; lower cutoff merges peaks).
+//
+// A peak is kept only when its hump ROSE from a dip at most kRise of its top
+// since the last peak (the dt2-keyframer's rise test: a wobble on a hit's decay
+// is the hit before's tail, not a hit), at least kMinGapSec after the last kept
+// one. The dip is tracked as the samples come (minSinceTop): one compare a
+// sample. (The keyframer's onset search, back along the envelope to where the
+// hump began, cost a hit 12-18 % of a block live: dropped.)
+//
+// Rates (heavylight, 2026-11-02: the followers cheaper, the modulation the same): the TKEO and the smoothing SVF
+// run every sample; the SVF is the anti-alias filter for what follows. The envelope ring, its average, the dip
+// tracking and the peak picker run every `decim` samples, decim set by the cutoff (SetCutoff) so the new Nyquist
+// sits at least kDecimOctaves above it: 4 at the default 48 Hz, 1 from ~375 Hz up. Peaks keep their sub-sample
+// placement (the d1 zero, now between envelope samples decim apart), so times stay tight.
 class Detector {
   public:
     static constexpr int kMaxEvents = 2048;   // power of 2 (shared ring mask)
@@ -41,6 +53,10 @@ class Detector {
     uint32_t totalCount;   // monotonic count of ALL stored events
     int      gapSamps;     // hold-off countdown since the last kept event
     int      minGapSamps;  // hold-off length (see kMinGapSec)
+    int      decim;        // the peak picker's step, samples (SetCutoff)
+    int      phase;        // samples since its last step
+    float    minSinceTop;  // the envelope's lowest since the last peak: the dip a new top rose from
+    float    lastKept;     // the latest kept event's value (its envelope peak): its strength, for the contour
 
     // Trivially constructible on purpose (SDRAM-resident) — see Init().
     bool keptFlags[kMaxEvents];   // slaved to events' monotonic index (& mask)
@@ -57,22 +73,34 @@ class Detector {
         cutoff     = 0.01f;
         resonance  = 0.0f;
         svf.SetControls(cutoff, resonance);
+        decim      = 1;
+        phase      = 0;
+        SetDecim();
         threshold  = 1.0f;
         clock      = 0.0;
         keptCount  = 0;
         totalCount = 0;
         gapSamps   = 0;
         minGapSamps = (int)(kMinGapSec * fs);
+        minSinceTop = 0.0f;
+        lastKept   = 0.0f;
         prevNewer  = {};   // matches a lag-3 read of the freshly zeroed ring
         for (int i = 0; i < kMaxEvents; i++) keptFlags[i] = false;
     }
 
-    void SetCutoff(float fc)     { cutoff = fc; svf.SetControls(cutoff, resonance); }
+    void SetCutoff(float fc)     { cutoff = fc; svf.SetControls(cutoff, resonance); SetDecim(); }
     void SetResonance(float r)   { resonance = r; svf.SetControls(cutoff, resonance); }
     void SetThreshold(float t)   { threshold = t; }
     void SetMinEventGap(float s) { minGapSamps = (int)(s * fs); }
 
     float    Envelope()   const { return svf.GetLowpass(); }    // smoothed |TKEO|
+    // The envelope at least `share` of the keep level (threshold x average):
+    // near a hit of its own (the stereo coincidence window).
+    bool Near(float share) const {
+        const float e = svf.GetLowpass();
+        return threshold < kMuteAt && e > kAbsFloor
+            && e > share * threshold * avgLp.GetLowpass();
+    }
     float    Average()    const { return avgLp.GetLowpass(); }  // threshold reference
     uint32_t Count()      const { return keptCount; }
     uint32_t TotalCount() const { return totalCount; }
@@ -87,22 +115,49 @@ class Detector {
     static constexpr float kAvgSec    = 0.1f;
     static constexpr float kAbsFloor  = 1e-5f;   // silence guard: sub-floor peaks aren't events
     static constexpr float kMuteAt    = 100.0f;  // threshold ≥ this = hard mute (UI sentinel)
-    // Hold-off between kept events. Distinct from the recorder's crossfade
-    // floor: this thins the trigger stream itself, so the panel's trig outs and
-    // the slices they represent stay in step.
-    static constexpr float kMinGapSec = 0.15f;
+    // Hold-off between kept events (the dt2-keyframer's TK_GAP). Distinct from
+    // the recorder's crossfade floor: this thins the trigger stream itself, so
+    // the panel's trig outs and the slices they represent stay in step. The
+    // rise test, not this, keeps a decay from re-firing.
+    static constexpr float kMinGapSec = 0.023f;
+    // A hump counts only when it rose from a dip at most this share of its top
+    // (0.35-0.4 by ear on the dt2-keyframer's corpus); 1 = off.
+    static constexpr float kRise = 0.4f;
+    // The peak picker's rate: its Nyquist at least this many octaves over the SVF's cutoff (a 2-pole low-pass:
+    // 60 dB down there), and never slower than kDecimMax. (3 octaves let a 720 Hz envelope's fast humps fall
+    // between steps: a tenth of the triggers moved, host, 2026-11-02.) Steps of 4 up to ~190 Hz, 2 to ~375 Hz.
+    static constexpr float kDecimOctaves = 5.0f;
+    static constexpr int   kDecimMax     = 4;
+
+    // The step for the cutoff: the largest power of 2 up to kDecimMax with cutoff x 2^kDecimOctaves under the
+    // stepped rate's Nyquist (the cutoff is normalised to fs/2, so under 1 / decim). The average's one-pole is
+    // retuned for the step.
+    void SetDecim() {
+        const float room = cutoff * std::exp2(kDecimOctaves);
+        int d = kDecimMax;
+        while (d > 1 && room * (float)d > 1.0f) d >>= 1;
+        if (d != decim) { decim = d; phase = 0; }
+        avgLp.SetCutoff((float)decim / ((float)M_PI * kAvgSec * fs));
+    }
 
     // Consume one sample; returns true iff a KEPT event was stored this sample.
     inline bool Analyze(float x) {
         raw.Write(x);
-        svf.Tick(raw.ReadBSplineFull(2.0f, 1).tkeo);
+        svf.Tick(raw.ReadBSplineFullInteger(2).tkeo);
+        if (++phase < decim) {   // (the picker steps every decim samples)
+            if (gapSamps > 0) gapSamps--;
+            clock += 1.0 / fs;
+            return false;
+        }
+        phase = 0;
         const float e = svf.GetLowpass();
         env.Write(e);
         avgLp.Tick(e);
+        if (e < minSinceTop) minSinceTop = e;
 
         // The lag-3 tap after this Write equals the lag-2 tap before it, so last
         // sample's `newer` is this sample's `older` — one spline eval per sample.
-        const CubicResult newer = env.ReadBSplineFull(2.0f, 1);
+        const CubicResult newer = env.ReadBSplineFullInteger(2);
         const CubicResult older = prevNewer;
         prevNewer = newer;
 
@@ -115,18 +170,24 @@ class Detector {
             // one fractional B-spline read for the value there.
             const float dd    = older.d1 - newer.d1;   // < 0 by the test above
             const float frac  = (dd < -1e-20f) ? (older.d1 / dd) : 0.5f;
-            const float lag   = 3.0f - frac;
+            const float lag   = 3.0f - frac;   // (in envelope steps, decim samples each)
             const float value = env.ReadBSplineFull(lag, 1).value;
 
             if (value > kAbsFloor) {
+                const bool rose = minSinceTop <= value * kRise;
+                minSinceTop = value;   // (descending from this top from here on)
                 const bool kept = (threshold < kMuteAt)
+                               && rose
                                && (value > threshold * avgLp.GetLowpass())
                                && (gapSamps <= 0);
-                events.Write({value, clock - (double)lag / (double)fs});
+                // (lag in steps: the newest step is this sample, each step back decim samples; at decim 1 it is
+                // clock - lag / fs, as before)
+                events.Write({value, clock - (1.0 + (double)(lag - 1.0f) * (double)decim) / (double)fs});
                 keptFlags[events.GetLatestIndex() & (kMaxEvents - 1)] = kept;
                 totalCount++;
                 if (kept) {
                     keptCount++;
+                    lastKept  = value;
                     gapSamps  = minGapSamps;
                     fired     = true;
                 }

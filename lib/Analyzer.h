@@ -30,6 +30,41 @@ private:
     bool   firstAnalysis;            // seed the very first keyframe unconditionally
     bool   armFinal;                 // force one closing keyframe on next Analyze
 
+    // Silence boundaries. The reconstruction is a smoothstep between keyframes,
+    // so a silence with none in it is drawn as one long curve between the
+    // sound's last extremum and the next sound's first: a slow wave of real
+    // amplitude that was never in the signal. A silence (the signal under
+    // kSilenceFloor, or the keyframe threshold if finer, for kSilenceSamples)
+    // is pinned at both ends with keyframes of true zero: at its last zero
+    // crossing before it fell quiet, once the silence is confirmed (still after
+    // the newest keyframe, so no reader has passed it), and when the sound
+    // returns (past twice the floor: no flicker on a tail crossing it) at its
+    // zero crossing just before, else its last quiet sample, ahead of its
+    // first extremum. Inside a silence, guard frames are zero too.
+    //
+    // The floor is NOT the keyframe threshold: at a coarse Quality that gated
+    // real material several times a second (a chattering gate).
+    static constexpr int   kSilenceSamples = 512;     // ~11 ms
+    static constexpr float kSilenceFloor   = 0.001f;  // -60 dB
+    static constexpr int   kSilenceZcBack  = 96;      // the return's crossing: at most this far before it
+#ifndef CAPICOLA_SILENCE_PIN
+#define CAPICOLA_SILENCE_PIN 1
+#endif
+    static constexpr bool kSilencePin = CAPICOLA_SILENCE_PIN;
+    float  prevV;                    // last sample's front-end value (zero crossings)
+    double lastZc;                   // the newest zero crossing, samples
+    double quietStart;               // where the signal last fell under the floor
+    double quietZc;                  // the newest zero crossing then
+    bool   quiet;                    // under the threshold since quietStart
+    bool   silent;                   // ... for kSilenceSamples: a silence, its start pinned
+
+    inline bool WriteZero(double t) {
+        if (IsFull()) return false;  // (a recording's ring: never wrap over its start)
+        sparse->Write({0.0f, t});
+        sparseCount++;
+        return true;
+    }
+
     inline void Push(const Keyframe& kf) {
         sparse->Write(kf);
         sparseCount++;
@@ -50,7 +85,15 @@ public:
         firstAnalysis = true;
         armFinal      = false;
         mostRecent    = {};
+        prevV         = 0.0f;
+        lastZc        = -1.0;
+        quietStart    = 0.0;
+        quietZc       = -1.0;
+        quiet         = false;
+        silent        = false;
     }
+
+    bool InSilence() const { return silent; }
 
     void SetThreshold(float t) { threshold = t; }
     void ArmFinalFrame()       { armFinal = true; }   // force a closing keyframe
@@ -105,6 +148,42 @@ public:
             armFinal = false;
             return true;
         }
+
+        // Silence boundaries (see kSilenceSamples). `kf.time` is this value's
+        // time, as the guard frames stamp it.
+        if (kSilencePin) {
+            const float v = mostRecent.value;
+            if ((prevV < 0.0f) != (v < 0.0f) || v == 0.0f) {
+                const float den = prevV - v;
+                lastZc = (den != 0.0f) ? (kf.time - 1.0 + (double)(prevV / den)) : kf.time;
+            }
+            prevV = v;
+            const double latest = lastFrame->time;
+            const float  floor  = (threshold < kSilenceFloor) ? threshold : kSilenceFloor;
+            const float  a      = std::abs(v);
+            bool wrote = false;
+            if (a < floor) {
+                if (!quiet) { quiet = true; quietStart = kf.time; quietZc = lastZc; }
+                else if (!silent && kf.time - quietStart >= (double)kSilenceSamples) {
+                    silent = true;   // where the sound ended: its last crossing before the quiet, else where it fell quiet
+                    const double b = (quietZc > latest + 1.0) ? quietZc : quietStart;
+                    if (b > latest + 1.0 && b < kf.time) wrote = WriteZero(b);
+                }
+            } else if (!silent || a >= 2.0f * floor) {
+                if (silent) {        // where it starts again: its crossing just before, else the last quiet sample
+                    const double newest = sparse->GetLatest()->time;
+                    const double b = (lastZc > newest + 1.0 && lastZc < kf.time
+                                      && lastZc >= kf.time - (double)kSilenceZcBack) ? lastZc : kf.time - 1.0;
+                    if (b > newest + 1.0) wrote = WriteZero(b);
+                }
+                quiet = silent = false;
+            }
+            if (wrote) {   // (the extremum test below measures from the zero)
+                lastFrame = sparse->GetLatest();
+                valueDiff = std::abs(mostRecent.value - lastFrame->value);
+            }
+        }
+
         if (crossedD1 && valueDiff > threshold) {
             // Fractional peak location between the two front-end taps.
             float  alpha = std::abs(older.d1) / (std::abs(older.d1) + std::abs(mostRecent.d1));
@@ -133,7 +212,7 @@ public:
         if ((double)rawCount - sparse->GetLatest()->time <= maxGap)
             return false;
         Keyframe kf;
-        kf.value = mostRecent.value;
+        kf.value = silent ? 0.0f : mostRecent.value;   // (a silence stays true zero)
         kf.time  = (rawCount > 0) ? (double)(rawCount - 1) : 0.0;
         sparse->Write(kf);
         sparseCount++;

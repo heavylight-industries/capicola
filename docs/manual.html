@@ -193,7 +193,7 @@
   <header class="mast">
     <h1>Capicola<span>.</span></h1>
     <div class="sub" id="sub"></div>
-    <div class="fw">Firmware 1.2</div>
+    <div class="fw">Firmware 1.3 (experimental)</div>
   </header>
 
   <p class="preamble" id="preamble"></p>
@@ -45733,8 +45733,9 @@ Z" />
 /* ─── The firmware's palette (main.cpp) ─────────────────────────────── */
 const C = {
   blue:   "#1e6eff", ice: "#96d2ff", orange: "#ff6e0f",
-  violet: "#a028ff", pink: "#ff3c96", teal: "#00dcc8", center: "#8a8a8a",
+  violet: "#a028ff", pink: "#ff3c96", teal: "#00dcc8", indigo: "#7846ff", center: "#8a8a8a",
   silk:   "#d6d2c4", green: "#14ff28", white: "#fff1e2",
+  magenta: "#ff0096", lime: "#aaff00", cyan: "#00beff", lavender: "#9678ff",
   cap: "#26251f", capEdge: "#3a3931", pointer: "#d6d2c4", hole: "#0b0c09"
 };
 
@@ -45762,17 +45763,21 @@ a knob snaps: <strong>Factory</strong>, or <strong>Save point</strong>, its valu
 so each knob toggles between where you are and where you saved. Save point falls back
 to factory while nothing is saved.`;
 
-const JACK_MODE = `Out of the box, <strong>Trig 1</strong> and <strong>Env 1</strong> are CV
-inputs, <strong>CV 2</strong> and <strong>CV 3</strong>, and every routing knob has two
-more segments for them, purple and green. Set <strong>Trig 1 / Env 1 Jacks</strong> to
-Outputs (web programmer, Options) to use them as printed. Saved with each preset.`;
+const JACK_MODE = `Out of the box all four jacks are outputs. Set <strong>Trig 1 / Env 1 Jacks</strong>
+to CV inputs (web programmer, Options) to turn <strong>Trig 1</strong> and <strong>Env 1</strong>
+into two more CV inputs, <strong>CV 2</strong> and <strong>CV 3</strong>: every routing knob
+then gains two segments for them, purple and green. The same option can add the output
+follower's signals to the routing knobs. Saved with each preset.`;
 
-const JACK_OUTS = `While Trig 1 and Env 1 are inputs, <strong>Trig 2</strong> and
-<strong>Env 2</strong> each carry any of the four follower signals: input triggers (every
-slice), output triggers, the input envelope or the output envelope (web programmer,
-Options). By default they carry the input triggers and the input envelope, so nothing is
-lost. With Trig 1 / Env 1 set to Outputs, all four carry what is printed. The 6pm pips
-always show the followers, whatever the jacks carry.`;
+const JACK_OUTS = `<strong>Trig 2</strong> and <strong>Env 2</strong> each carry any of eight
+signals: input triggers (every slice), output triggers, the input envelope, the output
+envelope, the input or output contour, or the input or output pulses (web programmer,
+Options). A contour is the accent line of the hits: at each hit it
+glides, smoothly, to that hit's strength, taking as long as the gap since the hit before,
+and holds until the next, so it never dips between hits. The pulses are a Gaussian on every hit, as
+tall as the hit is strong, their width on the Feedback and envelope page. By default Trig 2
+carries the input contour and Env 2 the input pulses. The 6pm pips always show the
+slices, the contour, TKEO and the pulses, whatever the jacks carry.`;
 
 const PREAMBLE = `Incoming stereo is stretched while its envelope and transients are tracked in
 parallel. When a transient passes the threshold, the lagging read head snaps to
@@ -45798,12 +45803,14 @@ const BUTTONS = [
       flip Pitch or Stretch.</p>`,
     see: ["gestures:slice", "gestures:pingpong", "gestures:load"] },
   { l: "Page / Shift", kicker: "B3 · page group 2",
-    facts: [["Click", "Routing ↔ Secondary, on release"],
-            ["Hold 0.1 s + nudge", "Shift: snap any knob to its target and back"],
+    facts: [["Click", "Engine → Feedback and envelope → Routing, on release (Engine first)"],
+            ["Hold 0.1 s + turn", "Routing and Depth: control all"],
+            ["Hold 0.1 s + nudge", "Other pages: Shift, snap any knob to its target and back"],
             ["+ B2, 0.5 s", "Load"], ["+ B1, 0.5 s", "Factory reset, all pages"]],
-    body: `<p>Steps between the Routing and Secondary pages. Hold it for SHIFT, to snap
-      knobs to their targets.</p>`,
-    see: ["gestures:snap", "gestures:load", "b1"] },
+    body: `<p>Steps through the Engine settings, Feedback and envelope settings and Routing pages, Engine settings first. Hold it on
+      Routing or Depth to move all six knobs at once; on the other pages, hold it for SHIFT, to snap knobs to their
+      targets.</p>`,
+    see: ["gestures:all", "gestures:snap", "gestures:load", "b1"] },
 ];
 
 /* JACK order: top row then bottom row, left to right. */
@@ -45816,18 +45823,18 @@ const JACKS = [
     body: `<p>External slice trigger. Every rising edge is taken, even with auto-slicing
       muted at the top of P3. Shares B2's dark flash.</p>`,
     see: ["b2", "perf:2", "j:2"] },
-  { l: "Trig 1", kicker: "Jack · CV 2 in · or trigger out",
-    facts: [["Default", "CV 2 in, the purple routing segment"],
-            ["As output", "0 / 5 V, 10 ms pulse on every slice"], ["Pip", "P3 shows slice triggers"]],
-    body: `<p>By default, ${L("routing:", "CV 2")}: a bipolar CV input with its own
-      segment on every routing knob.</p>
-      <p>Set to Outputs, it pulses once per slice that actually happens: detected
+  { l: "Trig 1", kicker: "Jack · trigger out · or CV 2 in",
+    facts: [["Default", "0 / 5 V, 10 ms pulse on every slice"],
+            ["As input", "CV 2, the purple routing segment"], ["Pip", "P3 shows slice triggers"]],
+    body: `<p>It pulses once per slice that actually happens: detected
       transients, B2 presses and Trig In edges alike. It never fires faster than the
       detector's 150 ms hold-off, and a long ${L("secondary:1", "fade")} thins it further,
-      because the fade is also the retrigger floor.</p>`,
+      because the fade is also the retrigger floor.</p>
+      <p>Set to CV inputs, it becomes ${L("routing:", "CV 2")}: a bipolar CV input with its
+      own segment on every routing knob.</p>`,
     see: ["perf:2", "secondary:1", "j:3"] },
-  { l: "Trig 2", kicker: "Jack · trigger out",
-    facts: [["Pulse", "0 / 5 V, 10 ms"], ["Default", "Input triggers: every slice"],
+  { l: "Trig 2", kicker: "Jack · any signal out",
+    facts: [["Range", "0 – 5 V, or 0 / 5 V pulses"], ["Default", "Input contour"],
             ["Pip", "P4 shows output triggers"]],
     body: `<p>${JACK_OUTS}</p>
       <p>Output triggers are a pulse on each transient the output follower keeps, with the
@@ -45845,17 +45852,17 @@ const JACKS = [
       ${L("routing:", "Routing")} page. Bipolar, like CV 2 and CV 3 on the Trig 1 and Env 1
       jacks.</p>`,
     see: ["routing:0", "depth:0"] },
-  { l: "Env 1", kicker: "Jack · CV 3 in · or envelope out",
-    facts: [["Default", "CV 3 in, the green routing segment"],
-            ["As output", "0 – 5 V input envelope"],
+  { l: "Env 1", kicker: "Jack · envelope out · or CV 3 in",
+    facts: [["Default", "0 – 5 V input envelope (TKEO)"],
+            ["As input", "CV 3, the green routing segment"],
             ["Pip", "P5 shows the input envelope; red on input clip"]],
-    body: `<p>By default, ${L("routing:", "CV 3")}: a bipolar CV input with its own
-      segment on every routing knob.</p>
-      <p>Set to Outputs, it carries the input follower's envelope, the same signal the
-      Routing page offers as a mod source.</p>`,
+    body: `<p>It carries the input follower's envelope, the same signal the Routing page
+      offers as TKEO.</p>
+      <p>Set to CV inputs, it becomes ${L("routing:", "CV 3")}: a bipolar CV input with its
+      own segment on every routing knob.</p>`,
     see: ["routing:0", "secondary:0", "j:8"] },
-  { l: "Env 2", kicker: "Jack · envelope out",
-    facts: [["Range", "0 – 5 V"], ["Default", "Input envelope"],
+  { l: "Env 2", kicker: "Jack · any signal out",
+    facts: [["Range", "0 – 5 V"], ["Default", "Input pulses"],
             ["Pip", "P6 shows the output envelope"]],
     body: `<p>${JACK_OUTS}</p>
       <p>The output envelope is taken from the post-mix sum.</p>`,
@@ -45913,26 +45920,33 @@ const VIEWS = {
           ${L("perf:4", "Quality")} stretches them further.</p>`,
         see: ["perf:4", "secondary:1"] },
       { l: "Quality", ring: sweep(1.0, C.orange),
-        facts: [["Range", "ε 0.08 (crunchy) → 0.001 (full fidelity), linear"],
-                ["Default", "Full fidelity"], ["Pip", "Mirrors Env 1; red on input clip"]],
+        facts: [["Range", "ε 0.08 (crunchy) → 0.001, linear; the top 3 % plays the input itself"],
+                ["Default", "The top: the input itself"], ["Pip", "Mirrors Env 1; red on input clip"]],
         body: `<p>An extremum is only stored as a keyframe if its value differs enough from the
           previous keyframe. Quality sets how much is enough. CW keeps nearly every extremum;
           CCW keeps fewer, making the representation sparser and, in turn, crunchier and more
           lo-fi.</p>
+          <p>The last 3 % of the turn is different: there the heads play the input's own audio
+          instead of the keyframes, which still decide where and when they splice. Crossing into
+          it or out of it crossfades the two once, over 20 ms. It reaches back 75 seconds; a
+          ${L("perf:1", "freeze")} older than that plays from the keyframes. Drive and Character
+          don't touch it: it is the input untouched. Only the knob itself goes in there; modulation
+          on Quality stops just short of it.</p>
           <p>Fewer keyframes also means a longer buffer and longer ${L("perf:1", "freeze")} times.</p>`,
         see: ["perf:3", "perf:1", "depth:4"] },
       { l: "Feedback", ring: sweep(0.0, C.orange),
-        facts: [["Range", "Loop gain 0 – 1.5"], ["Unity", "At ⅔ of the sweep"],
+        facts: [["Range", "Loop gain 0 – 2"], ["Unity", "At noon"],
                 ["Default", "Off"], ["Pip", "Mirrors Env 2"]],
         body: `<p>The output is fed back into the input, through a saturator and a tunable
-          ${L("secondary:5", "state-variable bandpass")}
-          on the way.</p>
+          ${L("diffusion:1", "state-variable bandpass")}
+          on the way, and the ${L("diffusion:0", "adaptive comb")} if it is on. Past noon the loop holds
+          itself up and builds; to tame it, patch a follower onto Feedback as a mod source.</p>
           <p>Feedback only bites near <em>now</em>: right after a slice, while the read head is
           close to the live input. The further a head lags behind now, the less influence the
           feedback has. The tap sits before the mix, so turning
           ${L("secondary:4", "Mix")} down doesn't
           starve the loop.</p>`,
-        see: ["secondary:5", "routing:5", "perf:2"] },
+        see: ["diffusion:1", "routing:5", "perf:2"] },
     ],
   },
 
@@ -45947,9 +45961,9 @@ const VIEWS = {
       centred depth. Each pot sets how hard its ${L("routing:", "modulation source")} pushes the same-numbered
       Primary knob: <code>source × depth</code>.</p>
       <p>The two followers are unipolar, 0 to 1. The CV inputs are bipolar.</p>
-      <p><strong>Hold <kbd>B3</kbd> and nudge a depth toward noon to snap it to exactly
-      zero; nudge it back to return.</strong> <kbd>B1</kbd>+<kbd>B3</kbd> returns every page to factory, every
-      depth included.</p>`,
+      <p><strong>Hold <kbd>B2</kbd> and nudge a depth to snap it to exactly zero.</strong> ${L("gestures:all",
+      "Hold <kbd>B3</kbd> and turn one")} to move all six by the same amount. <kbd>B1</kbd>+<kbd>B3</kbd> returns
+      every page to factory, every depth included.</p>`,
     knobs: [
       { l: "Pitch Mod Depth", ring: bipolar(0.5, C.pink, C.orange),
         facts: [["Range", "−1 … +1"], ["Default", "Noon (off)"]],
@@ -45981,29 +45995,38 @@ const VIEWS = {
   },
 
   routing: {
-    name: "Routing", hue: C.blue, group: "B3 · page 1 of 2",
+    name: "Routing", hue: C.blue, group: "B3 · page 3 of 3",
     panel: ["PITCH MOD SOURCE", "STRETCH MOD SOURCE", "THRESH MOD SOURCE", "GRAIN MOD SOURCE",
             "QUALITY MOD SOURCE", "FEEDBACK MOD SOURCE"],
-    caption: "Routing page · factory (all input follower)",
+    caption: "Routing page · factory (all TKEO)",
     buttons: [C.blue, C.blue, C.blue],
-    legend: [],
-    overview: `<p>Each potentiometer is divided into colored segments that set which
-      source that control's modulation comes from:</p>
+    legend: [[C.orange, "TKEO"], [C.magenta, "pulses"], [C.lime, "contour"], [C.white, "CV in"]],
+    overview: `<p>Each potentiometer is divided into equal colored segments that set which
+      source that control's modulation comes from. Out of the box there are four, in this order around the knob:</p>
       <div class="legend" style="flex-direction:column">
-        <span><i style="color:${C.orange};background:${C.orange}"></i>Orange · input envelope follower</span>
-        <span><i style="color:${C.blue};background:${C.blue}"></i>Blue · output envelope follower</span>
+        <span><i style="color:${C.orange};background:${C.orange}"></i>Orange · TKEO, the input envelope follower</span>
+        <span><i style="color:${C.magenta};background:${C.magenta}"></i>Magenta · the input's pulses</span>
+        <span><i style="color:${C.lime};background:${C.lime}"></i>Lime · the input's contour</span>
         <span><i style="color:${C.white};background:${C.white}"></i>White · external CV input</span>
+      </div>
+      <p>The options add more segments after those, in this order, and the four squeeze up to make room:</p>
+      <div class="legend" style="flex-direction:column">
+        <span><i style="color:${C.blue};background:${C.blue}"></i>Blue · the output follower's TKEO (with the output follower on)</span>
+        <span><i style="color:${C.cyan};background:${C.cyan}"></i>Cyan · the output's pulses (with the output follower on)</span>
+        <span><i style="color:${C.lavender};background:${C.lavender}"></i>Lavender · the output's contour (with the output follower on)</span>
         <span><i style="color:${C.violet};background:${C.violet}"></i>Purple · CV 2, the Trig 1 jack as an input</span>
         <span><i style="color:${C.green};background:${C.green}"></i>Green · CV 3, the Env 1 jack as an input</span>
       </div>
       <p>The selected segment glows with its source's live level, so you can see whether
       anything is arriving. The default is the input follower; how hard each source
       pushes is set on the ${L("depth:", "Depth")} page.</p>
+      <p><strong>Play it live.</strong> Switching a knob's source crossfades from the old one over 50 ms.
+      ${L("gestures:all", "Hold <kbd>B3</kbd> and turn one knob")} to step all six along their wheels together.</p>
       <p>${JACK_MODE}</p>`,
     knobs: ["Pitch", "Stretch", "Threshold", "Grain Size", "Quality", "Feedback"].map((t, i) => ({
       l: `${t === "Threshold" ? "Thresh." : t} Mod Source`, ring: zones(0),   /* fits the programmer */
-      facts: [["Zones", "In Env · Out Env · CV In, + CV 2 · CV 3 with the jacks as inputs"],
-              ["Default", "In Env"]],
+      facts: [["Zones", "TKEO · Pulses · Contour · CV In, + the output follower's three, + CV 2 · CV 3 with the jacks as inputs"],
+              ["Default", "TKEO"]],
       body: `<p>Modulation source for ${L(`perf:${i}`, t)}.</p>` + [
         `<p>Pitch is bipolar, so the bipolar CV In can sweep it through noon in both directions.</p>`,
         `<p>Stretch is bipolar, so the bipolar CV In can sweep it through freeze in both directions.</p>`,
@@ -46017,16 +46040,16 @@ const VIEWS = {
   },
 
   secondary: {
-    name: "Secondary", hue: C.teal, group: "B3 · page 2 of 2",
-    panel: ["SMOOTHING", "FADE", "DRIVE", "CHARACTER", "MIX", "FEEDBACK TONE"],
-    caption: "Secondary page · defaults",
+    name: "Engine settings", hue: C.teal, group: "B3 · page 1 of 3",
+    panel: ["SMOOTHING", "FADE", "DRIVE", "CHARACTER", "MIX", ""],
+    caption: "Engine settings · defaults",
     buttons: [C.teal, C.teal, C.teal],
     legend: [[C.teal, "value"]],
     overview: `<p>Deeper engine parameters: the envelope followers, overall latency and fade
       time, the nonlinear saturators, and more.</p>`,
     knobs: [
-      { l: "Smoothing", ring: sweep(0.43, C.teal),
-        facts: [["Range", "1.2 Hz – 3 kHz, exponential"], ["Default", "≈ 34 Hz"]],
+      { l: "Smoothing", ring: sweep(0.47, C.teal),
+        facts: [["Range", "1.2 Hz – 3 kHz, exponential"], ["Default", "≈ 48 Hz"]],
         body: `<p>Cutoff of the low-pass both envelope followers run through, applied before
           detection. Low settings give slow, smooth envelopes for modulation; high settings
           follow every transient.</p>
@@ -46046,24 +46069,79 @@ const VIEWS = {
         facts: [["Range", "Keyframe shaper gain 0.5 – 4.0"], ["Default", "1.0"]],
         body: `<p>Gain into the ${L("secondary:3", "keyframe waveshaper")}. It is applied to the <em>keyframes
           themselves</em>, before interpolation, so the nonlinearity never sees the sample
-          rate and can't fold aliases into the band however hard you push it.</p>`,
+          rate and can't fold aliases into the band however hard you push it. Its level is matched
+          as you turn it: more Drive is more distortion, not more volume, so the keyframes sit at
+          the same level as the input's own audio at the top of Quality.</p>`,
         see: ["secondary:3"] },
       { l: "Character", ring: sweep(1.0, C.teal),
         facts: [["Range", "Tape dropout ← clean → sinc boost"], ["Default", "Full sinc"]],
         body: `<p>The keyframes pass through a nonlinear waveshaper before reconstruction, which
           makes it an alias-free distortion. Character morphs between three shapes. CCW is a
           tape dropout curve. Noon is clean and fully linear: no distortion. CW is the sinc
-          shaper, which warms the signal slightly by boosting its quiet parts.</p>`,
+          shaper, which warms the signal slightly by boosting its quiet parts. Each shape is
+          level-matched, so moving between them changes the colour, not the volume.</p>`,
         see: ["secondary:2"] },
       { l: "Mix", ring: sweep(1.0, C.teal),
         facts: [["Range", "Dry → wet"], ["Default", "Full wet"]],
         body: `<p>Dry/wet blend at the outputs. Full wet is classic Capicola.</p>`,
         see: ["secondary:1", "perf:5"] },
-      { l: "Feedback Tone", ring: sweep(0.38, C.teal),
-        facts: [["Range", "48 Hz – 21.6 kHz, exponential"], ["Default", "≈ 480 Hz"]],
+      { l: "", ring: sweep(0.0, C.teal), facts: [],
+        body: `<p>Unused: Feedback Tone moved to the ${L("diffusion:1", "Feedback and envelope page")}.</p>`, see: ["diffusion:1"] },
+    ],
+  },
+
+  diffusion: {
+    name: "Feedback and envelope settings", hue: C.indigo, group: "B3 · page 2 of 3 (experimental)",
+    panel: ["SIZE", "FEEDBACK TONE", "", "", "", ""],
+    caption: "Feedback and envelope settings · defaults",
+    buttons: [C.indigo, C.indigo, C.indigo],
+    legend: [[C.indigo, "value"]],
+    overview: `<p>An adaptive comb inside the ${L("perf:5", "feedback loop")}, after its
+      ${L("diffusion:1", "bandpass")}: the feedback comes back from taps a length L behind it, so it
+      repeats every L. L comes from the sound itself, from the keyframes: from one period of what is
+      playing up to the grain's length. Size is not saved: it starts off on every boot. Feedback Tone is
+      saved with the rest. P3 sets the width of the pulse outputs, P4 folds the hits behind the contour
+      and pulse outputs, P5 delays them. P6 is unused.</p>`,
+    knobs: [
+      { l: "Size", ring: sweep(0.0, C.indigo),
+        facts: [["Range", "Off → one period → the grain"], ["Default", "Off"]],
+        body: `<p>Fully down, the comb is off and the feedback is exactly as it is without one.
+          Just above, the comb comes in with L at one period of the material (a pitched comb that
+          follows its tone); turning it up stretches L towards the grain's length, set by
+          ${L("perf:3", "Grain Size")} (repeats at the grain's rate). L follows the material as
+          it changes, gliding rather than jumping. A length past about 170 ms is halved until it
+          fits, keeping its rhythm. As L grows, the comb's eight taps spread out from L to
+          irregular shares of it (golden-ratio steps, so they never line up into a shorter comb): a clean
+          ring turns into a cloud of repeats. It only acts while ${L("perf:5", "Feedback")} is up.</p>`,
+        see: ["perf:5", "perf:3"] },
+      { l: "Feedback Tone", ring: sweep(0.29, C.indigo),
+        facts: [["Range", "100 Hz – 21.6 kHz, exponential"], ["Default", "≈ 480 Hz"], ["Saved", "Yes"]],
         body: `<p>Centre of the bandpass inside the ${L("perf:5", "feedback loop")}. It sets the tonality of
-          whatever the loop regenerates.</p>`,
+          whatever the loop regenerates. (It used to be the Engine settings page's P6; a preset still keeps it
+          there, so old saves load it as they were.)</p>`,
         see: ["perf:5"] },
+      { l: "Width", ring: sweep(0.19, C.indigo),
+        facts: [["Range", "25 ms – 1 s, exponential"], ["Default", "50 ms"]],
+        body: `<p>The width of the pulses on the pulse outputs: a Gaussian on every hit, as tall as the
+          hit is strong. Each input pulse peaks on its hit as you hear it and starts from nothing when the
+          hit is detected, a Fade earlier, so its rise is short and its fall is this wide: widen it to
+          thicken the decays. Output pulses start at their peak. Turning it reshapes the pulses in flight
+          smoothly. Not saved.</p>`,
+        see: ["secondary:1"] },
+      { l: "Fold", ring: sweep(0.0, C.indigo),
+        facts: [["Range", "None → four folds"], ["Default", "None"]],
+        body: `<p>Folds each hit's strength through a sine before the contour and pulse outputs draw
+          it. Turned up, loud hits fold back down and past zero while quieter ones rise, so the accents
+          of both reorder together; a negative strength makes the contour go below zero and its pulse
+          dip. It works on each hit's strength, never on the signal, so it adds no aliasing.</p>`,
+        see: ["diffusion:2"] },
+      { l: "Delay", ring: sweep(0.0, C.indigo),
+        facts: [["Range", "0 – 500 ms, linear"], ["Default", "0"]],
+        body: `<p>Moves the contour and pulse outputs later than the hits that make them, for
+          off-beat and swung modulation. A delayed pulse also knows its hit sooner, so it has room to
+          rise as slowly as it falls.</p>`,
+        see: ["diffusion:2", "diffusion:3"] },
+      { l: "", ring: sweep(0.0, C.indigo), facts: [], body: `<p>Unused.</p>`, see: [] },
     ],
   },
 
@@ -46082,6 +46160,8 @@ const VIEWS = {
         <li>${L("gestures:reset", "<strong>Factory reset</strong>")}: hold B1 + B3 for 0.5 s</li>
         <li>${L("gestures:pingpong", "<strong>Polarity flip</strong>")}: hold B2, nudge Pitch or Stretch</li>
         <li>${L("gestures:snap", "<strong>Shift snap</strong>")}: hold B3, nudge any knob</li>
+        <li>${L("gestures:all", "<strong>Control all</strong>")}: hold B3 on Routing or Depth, turn one knob</li>
+        <li>${L("gestures:zero", "<strong>Zero a depth</strong>")}: hold B2 on Depth, nudge a knob</li>
         <li>${L("gestures:slice", "<strong>Slice</strong>")}: tap B2; it fires on release</li>
       </ul>`,
     items: [
@@ -46115,11 +46195,23 @@ const VIEWS = {
           held. On release, whichever polarity it's in becomes the new setting, and B2
           doesn't slice.</p>`,
         see: ["perf:0", "perf:1", "b2"] },
+      { id: "all", l: "Control All", lit: { b: [2], k: [0, 1, 2, 3, 4, 5] },
+        facts: [["Gesture", "Hold B3, turn one knob"], ["Where", "Routing and Depth"]],
+        body: `<p>Hold B3 and turn one knob, and the other five follow it from wherever each one is: on
+          ${L("routing:", "Routing")}, each steps the same number of sources along its wheel; on
+          ${L("depth:", "Depth")}, each depth changes by the same amount. Each stops at its own end. The knob you turn
+          picks up first, its pip as always; the others wait behind their pips after you let go.</p>`,
+        see: ["routing:", "depth:", "b3"] },
+      { id: "zero", l: "Zero a Depth", lit: { b: [1] },
+        facts: [["Gesture", "Hold B2, nudge a knob"], ["Where", "Depth page"]],
+        body: `<p>Hold B2 and nudge a depth, and it snaps to exactly zero, held there until B2 lets go. B2 doesn't
+          slice on that release.</p>`,
+        see: ["depth:", "b2"] },
       { id: "snap", l: "Shift Snap", lit: { b: [2], k: [0, 1, 2, 3, 4, 5] },
-        facts: [["Gesture", "Hold B3 (SHIFT), nudge any knob"], ["Where", "Every page"],
+        facts: [["Gesture", "Hold B3 (SHIFT), nudge any knob"], ["Where", "Every page but Routing and Depth"],
                 ["Target", "Factory, or your save point (web programmer)"]],
-        body: `<p>Hold SHIFT and nudge any knob, on any page, and it snaps to its factory
-          default: depths to exactly zero. Nudge back the other way while still holding and it
+        body: `<p>Hold SHIFT and nudge any knob, on any page but Routing and Depth, and it snaps to its factory
+          default. Nudge back the other way while still holding and it
           returns. It's the per-knob ${L("gestures:reset", "factory reset")}.</p>
           <p>${SNAP_TARGET}</p>`,
         see: ["gestures:reset", "b3"] },
@@ -46140,16 +46232,17 @@ const VIEWS = {
           faster than one fade.</p>`,
         see: ["perf:2", "b2", "j:1", "j:2", "secondary:1"] },
       { id: "panel", l: "Reading the Panel", lit: { k: [2, 3, 4, 5] },
-        facts: [["P3 pip", "Slice triggers"], ["P4 pip", "Output triggers"],
-                ["P5 pip", "Input envelope; red on input clip"], ["P6 pip", "Output envelope"],
+        facts: [["P3 pip", "Slice triggers"], ["P4 pip", "Contour"],
+                ["P5 pip", "TKEO, the input envelope; red on input clip"], ["P6 pip", "Pulses"],
                 ["Slice", "B2 blinks dark"], ["Save, load, reset", "Three white flashes on all three buttons"]],
         body: `<p>All three buttons wear the visible page's color, so activity reads against it:
           B2 blinks dark on every slice, and a ${L("gestures:save", "save")},
           ${L("gestures:load", "load")} or ${L("gestures:reset", "factory reset")} confirms with
           three bright white flashes on all three buttons.</p>
-          <p>The pips at six o'clock under P3–P6 always show the four followers, on every page
-          and whatever the jacks are set to carry. The trigger pips hold for 60 ms, so a 10 ms
-          pulse is easy to see.</p>`,
+          <p>The pips at six o'clock under P3–P6 always show the slices, the input's contour, TKEO and the input's
+          pulses, on every page and whatever the jacks are set to carry: the factory jacks' signals, in that order.
+          The slice pip holds for 60 ms, so a 10 ms pulse is easy to see. A folded contour or pulse shows by its
+          size.</p>`,
         see: ["gestures:slice", "j:2", "j:3"] },
     ],
   },
@@ -46200,13 +46293,12 @@ function knobDisplay([cx, cy], spec) {
     else if (f < -0.005) s += ringArc(cx, cy, 0.5 + f, 0.5, spec.n);
     else s += ringArc(cx, cy, 0.495, 0.505, C.center, RING_W, false);
   } else if (spec.t === "zones") {
-    const five = state.jacksIn;
-    const zc = five ? [C.orange, C.blue, C.white, C.violet, C.green] : [C.orange, C.blue, C.white];
-    /* LED splits: 4|5|4, or 2|2|3|2|2 with the two end LEDs dark */
-    const zt = (five ? [1, 3, 5, 8, 10, 12] : [0, 4, 9, 13]).map(n => n / 13);
+    /* The firmware's wheel (Sources()): TKEO, pulses, contour, CV In, + CV 2 / CV 3 with the jacks as inputs; the
+     * arc split evenly among them (border LEDs blend on the unit). */
+    const zc = [C.orange, C.magenta, C.lime, C.white].concat(state.jacksIn ? [C.violet, C.green] : []);
     zc.forEach((c, z) => {
       const dim = z !== spec.sel;
-      s += ringArc(cx, cy, zt[z] + 0.006, zt[z+1] - 0.006,
+      s += ringArc(cx, cy, z / zc.length + 0.006, (z + 1) / zc.length - 0.006,
                    dim ? c + "73" : c, RING_W, !dim);
     });
   }
@@ -46267,7 +46359,7 @@ function labelDisplay([cx, cy], name) {
  * (button 2), "j6" (jack 7), a gesture id, or null for the page overview.
  * Cross-links use "view:index", "b<n>" (1-based, as on the panel), "j:<i>",
  * or "gestures:<id>". */
-const state = { view: "perf", key: null, jacksIn: true };
+const state = { view: "perf", key: null, jacksIn: false };   /* factory: outputs */
 const VIEW_KEYS = Object.keys(VIEWS);
 
 function entityFor(view, key) {

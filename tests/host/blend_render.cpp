@@ -70,7 +70,8 @@ int main(int argc, char** argv)
     if (argc < 2) { std::fprintf(stderr, "usage: blend_render <out.wav> [input.wav]\n"); return 2; }
 
     static KeyframeRecorder<65536> kr;
-    kr.Init();
+    static SparseLine<65536> krRing;
+    kr.Init(krRing);
     kr.SetThreshold(0.001f);
     kr.SetGrainStretch(0.6f);
     kr.SetGrainPitch(std::exp2(3.0f / 12.0f));

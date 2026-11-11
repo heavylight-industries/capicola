@@ -91,6 +91,8 @@ add_subdirectory("${ALCHEMY_SDK_DIR}/framework"
 set(ALCHEMY_FW_SOURCES
     src/main.cpp
     src/audio/audio_engine.cpp)
+# -DCAPICOLA_FB_DIFFUSER=ON: the diffuser (lib/Diffuser.h) in the feedback loop and its Diffusion page (B3 page 3)
+option(CAPICOLA_FB_DIFFUSER "The diffuser in the feedback loop" ON)
 
 # The interactive manual rides the HostLink descriptor, which the bench image
 # trades away for the serial log — so it only joins the deploy builds.
@@ -122,6 +124,10 @@ if(ALCHEMY_DEBUG_SRAM)
         LINKER:-Map=capicola.map)
 
 else()
+    # Capicola's copy of the SDK's SRAM linker script: the same, plus .axi_bss
+    # (the recorders' fast state in the AXI SRAM; see the script).
+    set(_ALCHEMY_QSPI_LINKER_SCRIPT
+        "${CMAKE_SOURCE_DIR}/cmake/linkers/capicola_sram.lds" CACHE INTERNAL "" FORCE)
     daisy_executable(
         NAME    capicola
         SOURCES ${ALCHEMY_FW_SOURCES}
@@ -157,8 +163,14 @@ target_include_directories(capicola PRIVATE ${CAPICOLA_STAMP_DIR})
 # -DCAPICOLA_BENCH_LOG=ON for a bench image with the serial log instead.
 option(CAPICOLA_BENCH_LOG
        "1 Hz CPU/CV serial log on the front USB (replaces HostLink)" OFF)
+if(CAPICOLA_FB_DIFFUSER)
+    target_compile_definitions(capicola PRIVATE CAPICOLA_FB_DIFFUSER)
+endif()
+
 if(CAPICOLA_BENCH_LOG)
-    target_compile_definitions(capicola PRIVATE CAPICOLA_BENCH_LOG)
+    # The bench image also profiles: stage timings and engine counts behind
+    # CAPICOLA_PROFILE (lib/KeyframeRecorder.h, audio_engine), streamed as CSV.
+    target_compile_definitions(capicola PRIVATE CAPICOLA_BENCH_LOG CAPICOLA_PROFILE)
 endif()
 
 # ── capicola-flash-live — flash without touching the module ─────────────────

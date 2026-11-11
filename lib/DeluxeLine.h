@@ -162,6 +162,24 @@ public:
         return result;
     }
 
+    // B-spline at an integer delay with derivatives and TKEO: ReadBSplineFull at a whole delay, its basis
+    // collapsed (t = 0: B = 1, 4, 1, 0 / 6; dB = -3, 0, 3, 0 / 6; d2B = 6, -12, 6, 0 / 6). The detector's
+    // per-sample reads: a third of the full read's work.
+    inline CubicResult ReadBSplineFullInteger(int delay) const noexcept {
+        const T x0 = GetSample(writePos - delay + 1);
+        const T x1 = GetSample(writePos - delay);
+        const T x2 = GetSample(writePos - delay - 1);
+        static constexpr T inv6 = T(1.0/6.0);
+        static constexpr T half = T(0.5);
+
+        CubicResult result;
+        result.value = (x0 + T(4) * x1 + x2) * inv6;
+        result.d1    = (x2 - x0) * half;
+        result.d2    = x0 - T(2) * x1 + x2;
+        result.tkeo  = std::abs(result.d1 * result.d1 - result.value * result.d2);
+        return result;
+    }
+
     //B-spline interpolation
     inline T ReadBSpline(T delay = T(2.0)) const noexcept {
         const int delay_int_ = static_cast<int>(delay);

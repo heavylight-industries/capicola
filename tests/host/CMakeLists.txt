@@ -21,3 +21,9 @@ add_test(NAME capicola COMMAND capicola_tests)
 add_executable(blend_render blend_render.cpp)
 target_include_directories(blend_render PRIVATE "${CMAKE_SOURCE_DIR}/lib")
 target_compile_options(blend_render PRIVATE -O2 -Wall -Wextra)
+
+# Offline render of the feedback loop with the diffuser (not a test):
+#   diffuse_render <out.wav> <diffusion> <spread> [feedback] [input.wav] [pitch] [stretch]
+add_executable(diffuse_render diffuse_render.cpp)
+target_include_directories(diffuse_render PRIVATE "${CMAKE_SOURCE_DIR}/lib")
+target_compile_options(diffuse_render PRIVATE -O2 -Wall -Wextra)

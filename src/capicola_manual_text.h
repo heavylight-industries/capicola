@@ -30,9 +30,9 @@ inline constexpr const char* kDepthPage =
     "pink glow marks a centred depth. Each pot sets how hard its "
     "modulation source pushes the same-numbered Primary knob: `source × "
     "depth`.\n\nThe two followers are unipolar, 0 to 1. The CV inputs are "
-    "bipolar.\n\n**Hold B3 and nudge a depth toward noon to snap it to "
-    "exactly zero; nudge it back to return.** B1+B3 returns every page to "
-    "factory, every depth included.";
+    "bipolar.\n\n**Hold B2 and nudge a depth to snap it to exactly "
+    "zero.** Hold B3 and turn one to move all six by the same amount. "
+    "B1+B3 returns every page to factory, every depth included.";
 
 inline constexpr const char* kPrimaryName[6] = {
     "Pitch",
@@ -72,14 +72,23 @@ inline constexpr const char* kPrimaryKnob[6] = {
     "from the previous keyframe. Quality sets how much is enough. CW "
     "keeps nearly every extremum; CCW keeps fewer, making the "
     "representation sparser and, in turn, crunchier and more "
-    "lo-fi.\n\nFewer keyframes also means a longer buffer and longer "
-    "freeze times.\n\n- **Pip:** Mirrors Env 1; red on input clip",
+    "lo-fi.\n\nThe last 3 % of the turn is different: there the heads "
+    "play the input's own audio instead of the keyframes, which still "
+    "decide where and when they splice. Crossing into it or out of it "
+    "crossfades the two once, over 20 ms. It reaches back 75 seconds; a "
+    "freeze older than that plays from the keyframes. Drive and Character "
+    "don't touch it: it is the input untouched. Only the knob itself goes "
+    "in there; modulation on Quality stops just short of it.\n\nFewer "
+    "keyframes also means a longer buffer and longer freeze times.\n\n- "
+    "**Pip:** Mirrors Env 1; red on input clip",
     "The output is fed back into the input, through a saturator and a "
-    "tunable state-variable bandpass on the way.\n\nFeedback only bites "
-    "near *now*: right after a slice, while the read head is close to the "
-    "live input. The further a head lags behind now, the less influence "
-    "the feedback has. The tap sits before the mix, so turning Mix down "
-    "doesn't starve the loop.\n\n- **Unity:** At ⅔ of the sweep\n- "
+    "tunable state-variable bandpass on the way, and the adaptive comb if "
+    "it is on. Past noon the loop holds itself up and builds; to tame it, "
+    "patch a follower onto Feedback as a mod source.\n\nFeedback only "
+    "bites near *now*: right after a slice, while the read head is close "
+    "to the live input. The further a head lags behind now, the less "
+    "influence the feedback has. The tap sits before the mix, so turning "
+    "Mix down doesn't starve the loop.\n\n- **Unity:** At noon\n- "
     "**Pip:** Mirrors Env 2",
 };
 
@@ -115,22 +124,27 @@ inline constexpr const char* kRouteName[6] = {
 
 inline constexpr const char* kRouteHelp[6] = {
     "Modulation source for Pitch.\n\nPitch is bipolar, so the bipolar CV "
-    "In can sweep it through noon in both directions.\n\n- **Zones:** In "
-    "Env · Out Env · CV In, + CV 2 · CV 3 with the jacks as inputs",
+    "In can sweep it through noon in both directions.\n\n- **Zones:** "
+    "TKEO · Pulses · Contour · CV In, + the output follower's three, + CV "
+    "2 · CV 3 with the jacks as inputs",
     "Modulation source for Stretch.\n\nStretch is bipolar, so the bipolar "
     "CV In can sweep it through freeze in both directions.\n\n- "
-    "**Zones:** In Env · Out Env · CV In, + CV 2 · CV 3 with the jacks as "
-    "inputs",
-    "Modulation source for Threshold.\n\n- **Zones:** In Env · Out Env · "
-    "CV In, + CV 2 · CV 3 with the jacks as inputs",
-    "Modulation source for Grain Size.\n\n- **Zones:** In Env · Out Env · "
-    "CV In, + CV 2 · CV 3 with the jacks as inputs",
-    "Modulation source for Quality.\n\n- **Zones:** In Env · Out Env · CV "
-    "In, + CV 2 · CV 3 with the jacks as inputs",
+    "**Zones:** TKEO · Pulses · Contour · CV In, + the output follower's "
+    "three, + CV 2 · CV 3 with the jacks as inputs",
+    "Modulation source for Threshold.\n\n- **Zones:** TKEO · Pulses · "
+    "Contour · CV In, + the output follower's three, + CV 2 · CV 3 with "
+    "the jacks as inputs",
+    "Modulation source for Grain Size.\n\n- **Zones:** TKEO · Pulses · "
+    "Contour · CV In, + the output follower's three, + CV 2 · CV 3 with "
+    "the jacks as inputs",
+    "Modulation source for Quality.\n\n- **Zones:** TKEO · Pulses · "
+    "Contour · CV In, + the output follower's three, + CV 2 · CV 3 with "
+    "the jacks as inputs",
     "Modulation source for Feedback.\n\nThe output follower acts as a "
     "governor here: the louder the output gets, the further the loop gain "
-    "can go before it runs.\n\n- **Zones:** In Env · Out Env · CV In, + "
-    "CV 2 · CV 3 with the jacks as inputs",
+    "can go before it runs.\n\n- **Zones:** TKEO · Pulses · Contour · CV "
+    "In, + the output follower's three, + CV 2 · CV 3 with the jacks as "
+    "inputs",
 };
 
 inline constexpr const char* kSecName[6] = {
@@ -157,50 +171,77 @@ inline constexpr const char* kSecHelp[6] = {
     "Gain into the keyframe waveshaper. It is applied to the *keyframes "
     "themselves*, before interpolation, so the nonlinearity never sees "
     "the sample rate and can't fold aliases into the band however hard "
-    "you push it.",
+    "you push it. Its level is matched as you turn it: more Drive is more "
+    "distortion, not more volume, so the keyframes sit at the same level "
+    "as the input's own audio at the top of Quality.",
     "The keyframes pass through a nonlinear waveshaper before "
     "reconstruction, which makes it an alias-free distortion. Character "
     "morphs between three shapes. CCW is a tape dropout curve. Noon is "
     "clean and fully linear: no distortion. CW is the sinc shaper, which "
-    "warms the signal slightly by boosting its quiet parts.",
+    "warms the signal slightly by boosting its quiet parts. Each shape is "
+    "level-matched, so moving between them changes the colour, not the "
+    "volume.",
     "Dry/wet blend at the outputs. Full wet is classic Capicola.",
     "Centre of the bandpass inside the feedback loop. It sets the "
-    "tonality of whatever the loop regenerates.",
+    "tonality of whatever the loop regenerates. (It used to be the Engine "
+    "settings page's P6; a preset still keeps it there, so old saves load "
+    "it as they were.)\n\n- **Saved:** Yes",
 };
 
 /* Manual sections: the overviews with no entity to hang on, and the
  * gestures that belong to no button. */
 inline constexpr const char* kRoutingOverview =
-    "Each potentiometer is divided into colored segments that set which "
-    "source that control's modulation comes from:\n\n- Orange · input "
-    "envelope follower\n- Blue · output envelope follower\n- White · "
-    "external CV input\n- Purple · CV 2, the Trig 1 jack as an input\n- "
-    "Green · CV 3, the Env 1 jack as an input\n\nThe selected segment "
-    "glows with its source's live level, so you can see whether anything "
-    "is arriving. The default is the input follower; how hard each source "
-    "pushes is set on the Depth page.\n\nOut of the box, **Trig 1** and "
-    "**Env 1** are CV inputs, **CV 2** and **CV 3**, and every routing "
-    "knob has two more segments for them, purple and green. Set **Trig 1 "
-    "/ Env 1 Jacks** to Outputs (web programmer, Options) to use them as "
-    "printed. Saved with each preset.";
+    "Each potentiometer is divided into equal colored segments that set "
+    "which source that control's modulation comes from. Out of the box "
+    "there are four, in this order around the knob:\n\n- Orange · TKEO, "
+    "the input envelope follower\n- Magenta · the input's pulses\n- Lime "
+    "· the input's contour\n- White · external CV input\n\nThe options "
+    "add more segments after those, in this order, and the four squeeze "
+    "up to make room:\n\n- Blue · the output follower's TKEO (with the "
+    "output follower on)\n- Cyan · the output's pulses (with the output "
+    "follower on)\n- Lavender · the output's contour (with the output "
+    "follower on)\n- Purple · CV 2, the Trig 1 jack as an input\n- Green "
+    "· CV 3, the Env 1 jack as an input\n\nThe selected segment glows "
+    "with its source's live level, so you can see whether anything is "
+    "arriving. The default is the input follower; how hard each source "
+    "pushes is set on the Depth page.\n\n**Play it live.** Switching a "
+    "knob's source crossfades from the old one over 50 ms. Hold B3 and "
+    "turn one knob to step all six along their wheels together.\n\nOut of "
+    "the box all four jacks are outputs. Set **Trig 1 / Env 1 Jacks** to "
+    "CV inputs (web programmer, Options) to turn **Trig 1** and **Env 1** "
+    "into two more CV inputs, **CV 2** and **CV 3**: every routing knob "
+    "then gains two segments for them, purple and green. The same option "
+    "can add the output follower's signals to the routing knobs. Saved "
+    "with each preset.";
 
 inline constexpr const char* kSecondaryOverview =
     "Deeper engine parameters: the envelope followers, overall latency "
     "and fade time, the nonlinear saturators, and more.";
 
 inline constexpr const char* kRoutingPageHelpJson =
-    "[\"Each potentiometer is divided into colored segments that set "
-    "which source that control's modulation comes from:\\n\\n- Orange · "
-    "input envelope follower\\n- Blue · output envelope follower\\n- "
-    "White · external CV input\\n- Purple · CV 2, the Trig 1 jack as an "
-    "input\\n- Green · CV 3, the Env 1 jack as an input\\n\\nThe selected "
-    "segment glows with its source's live level, so you can see whether "
-    "anything is arriving. The default is the input follower; how hard "
-    "each source pushes is set on the Depth page.\\n\\nOut of the box, "
-    "**Trig 1** and **Env 1** are CV inputs, **CV 2** and **CV 3**, and "
-    "every routing knob has two more segments for them, purple and green. "
-    "Set **Trig 1 / Env 1 Jacks** to Outputs (web programmer, Options) to "
-    "use them as printed. Saved with each preset.\"]";
+    "[\"Each potentiometer is divided into equal colored segments that "
+    "set which source that control's modulation comes from. Out of the "
+    "box there are four, in this order around the knob:\\n\\n- Orange · "
+    "TKEO, the input envelope follower\\n- Magenta · the input's "
+    "pulses\\n- Lime · the input's contour\\n- White · external CV "
+    "input\\n\\nThe options add more segments after those, in this order, "
+    "and the four squeeze up to make room:\\n\\n- Blue · the output "
+    "follower's TKEO (with the output follower on)\\n- Cyan · the "
+    "output's pulses (with the output follower on)\\n- Lavender · the "
+    "output's contour (with the output follower on)\\n- Purple · CV 2, "
+    "the Trig 1 jack as an input\\n- Green · CV 3, the Env 1 jack as an "
+    "input\\n\\nThe selected segment glows with its source's live level, "
+    "so you can see whether anything is arriving. The default is the "
+    "input follower; how hard each source pushes is set on the Depth "
+    "page.\\n\\n**Play it live.** Switching a knob's source crossfades "
+    "from the old one over 50 ms. Hold B3 and turn one knob to step all "
+    "six along their wheels together.\\n\\nOut of the box all four jacks "
+    "are outputs. Set **Trig 1 / Env 1 Jacks** to CV inputs (web "
+    "programmer, Options) to turn **Trig 1** and **Env 1** into two more "
+    "CV inputs, **CV 2** and **CV 3**: every routing knob then gains two "
+    "segments for them, purple and green. The same option can add the "
+    "output follower's signals to the routing knobs. Saved with each "
+    "preset.\"]";
 
 inline constexpr const char* kSecondaryPageHelpJson =
     "[\"Deeper engine parameters: the envelope followers, overall latency "
@@ -212,8 +253,10 @@ inline constexpr const char* kGesturesOverview =
     "Each works the same on every page.\n\n- **Save**: hold B1 + B2 for "
     "0.33 s\n- **Load**: hold B2 + B3 for 0.5 s\n- **Factory reset**: "
     "hold B1 + B3 for 0.5 s\n- **Polarity flip**: hold B2, nudge Pitch or "
-    "Stretch\n- **Shift snap**: hold B3, nudge any knob\n- **Slice**: tap "
-    "B2; it fires on release";
+    "Stretch\n- **Shift snap**: hold B3, nudge any knob\n- **Control "
+    "all**: hold B3 on Routing or Depth, turn one knob\n- **Zero a "
+    "depth**: hold B2 on Depth, nudge a knob\n- **Slice**: tap B2; it "
+    "fires on release";
 
 inline constexpr const char* kPotCatch =
     "Every page stores its own value for each knob. After a page switch "
@@ -236,13 +279,15 @@ inline constexpr const char* kReadingPanel =
     "All three buttons wear the visible page's color, so activity reads "
     "against it: B2 blinks dark on every slice, and a save, load or "
     "factory reset confirms with three bright white flashes on all three "
-    "buttons.\n\nThe pips at six o'clock under P3–P6 always show the four "
-    "followers, on every page and whatever the jacks are set to carry. "
-    "The trigger pips hold for 60 ms, so a 10 ms pulse is easy to "
-    "see.\n\n- **P3 pip:** Slice triggers\n- **P4 pip:** Output "
-    "triggers\n- **P5 pip:** Input envelope; red on input clip\n- **P6 "
-    "pip:** Output envelope\n- **Slice:** B2 blinks dark\n- **Save, load, "
-    "reset:** Three white flashes on all three buttons";
+    "buttons.\n\nThe pips at six o'clock under P3–P6 always show the "
+    "slices, the input's contour, TKEO and the input's pulses, on every "
+    "page and whatever the jacks are set to carry: the factory jacks' "
+    "signals, in that order. The slice pip holds for 60 ms, so a 10 ms "
+    "pulse is easy to see. A folded contour or pulse shows by its "
+    "size.\n\n- **P3 pip:** Slice triggers\n- **P4 pip:** Contour\n- **P5 "
+    "pip:** TKEO, the input envelope; red on input clip\n- **P6 pip:** "
+    "Pulses\n- **Slice:** B2 blinks dark\n- **Save, load, reset:** Three "
+    "white flashes on all three buttons";
 
 /* Buttons, jacks (panel grid order: top row L→R, then bottom row) */
 inline constexpr const char* kButtonName[3] = {
@@ -256,14 +301,16 @@ inline constexpr const char* kButton[3] = {
     "press returns to whichever you left.",
     "Tap to slice; it fires on release, and never as part of a chord. "
     "Hold it to flip Pitch or Stretch.",
-    "Steps between the Routing and Secondary pages. Hold it for SHIFT, to "
-    "snap knobs to their targets.",
+    "Steps through the Engine settings, Feedback and envelope settings "
+    "and Routing pages, Engine settings first. Hold it on Routing or "
+    "Depth to move all six knobs at once; on the other pages, hold it for "
+    "SHIFT, to snap knobs to their targets.",
 };
 
 inline constexpr const char* kButtonTap[3] = {
     "Primary ↔ Depth, on release",
     "Slice both channels, on release",
-    "Routing ↔ Secondary, on release",
+    "Engine → Feedback and envelope → Routing, on release (Engine first)",
 };
 
 inline constexpr const char* kJack[10] = {
@@ -271,46 +318,53 @@ inline constexpr const char* kJack[10] = {
     "External slice trigger. Every rising edge is taken, even with "
     "auto-slicing muted at the top of P3. Shares B2's dark flash.\n\n- "
     "**Fires:** Rising edge, ~+2 V\n- **Re-arms:** ~+1 V",
-    "By default, CV 2: a bipolar CV input with its own segment on every "
-    "routing knob.\n\nSet to Outputs, it pulses once per slice that "
-    "actually happens: detected transients, B2 presses and Trig In edges "
-    "alike. It never fires faster than the detector's 150 ms hold-off, "
-    "and a long fade thins it further, because the fade is also the "
-    "retrigger floor.\n\n- **Default:** CV 2 in, the purple routing "
-    "segment\n- **As output:** 0 / 5 V, 10 ms pulse on every slice\n- "
-    "**Pip:** P3 shows slice triggers",
-    "While Trig 1 and Env 1 are inputs, **Trig 2** and **Env 2** each "
-    "carry any of the four follower signals: input triggers (every "
-    "slice), output triggers, the input envelope or the output envelope "
-    "(web programmer, Options). By default they carry the input triggers "
-    "and the input envelope, so nothing is lost. With Trig 1 / Env 1 set "
-    "to Outputs, all four carry what is printed. The 6pm pips always show "
-    "the followers, whatever the jacks carry.\n\nOutput triggers are a "
-    "pulse on each transient the output follower keeps, with the same 150 "
-    "ms hold-off. They never slice anything.\n\n- **Pulse:** 0 / 5 V, 10 "
-    "ms\n- **Default:** Input triggers: every slice\n- **Pip:** P4 shows "
-    "output triggers",
+    "It pulses once per slice that actually happens: detected transients, "
+    "B2 presses and Trig In edges alike. It never fires faster than the "
+    "detector's 150 ms hold-off, and a long fade thins it further, "
+    "because the fade is also the retrigger floor.\n\nSet to CV inputs, "
+    "it becomes CV 2: a bipolar CV input with its own segment on every "
+    "routing knob.\n\n- **Default:** 0 / 5 V, 10 ms pulse on every "
+    "slice\n- **As input:** CV 2, the purple routing segment\n- **Pip:** "
+    "P3 shows slice triggers",
+    "**Trig 2** and **Env 2** each carry any of eight signals: input "
+    "triggers (every slice), output triggers, the input envelope, the "
+    "output envelope, the input or output contour, or the input or output "
+    "pulses (web programmer, Options). A contour is the accent line of "
+    "the hits: at each hit it glides, smoothly, to that hit's strength, "
+    "taking as long as the gap since the hit before, and holds until the "
+    "next, so it never dips between hits. The pulses are a Gaussian on "
+    "every hit, as tall as the hit is strong, their width on the Feedback "
+    "and envelope page. By default Trig 2 carries the input contour and "
+    "Env 2 the input pulses. The 6pm pips always show the slices, the "
+    "contour, TKEO and the pulses, whatever the jacks carry.\n\nOutput "
+    "triggers are a pulse on each transient the output follower keeps, "
+    "with the same 150 ms hold-off. They never slice anything.\n\n- "
+    "**Default:** Input contour\n- **Pip:** P4 shows output triggers",
     "Left output, after the dry/wet mix. There is no dry normalling in "
     "hardware.",
     "Right input.",
     "The external modulation source, routable to any Primary knob from "
     "the Routing page. Bipolar, like CV 2 and CV 3 on the Trig 1 and Env "
     "1 jacks.",
-    "By default, CV 3: a bipolar CV input with its own segment on every "
-    "routing knob.\n\nSet to Outputs, it carries the input follower's "
-    "envelope, the same signal the Routing page offers as a mod "
-    "source.\n\n- **Default:** CV 3 in, the green routing segment\n- **As "
-    "output:** 0 – 5 V input envelope\n- **Pip:** P5 shows the input "
-    "envelope; red on input clip",
-    "While Trig 1 and Env 1 are inputs, **Trig 2** and **Env 2** each "
-    "carry any of the four follower signals: input triggers (every "
-    "slice), output triggers, the input envelope or the output envelope "
-    "(web programmer, Options). By default they carry the input triggers "
-    "and the input envelope, so nothing is lost. With Trig 1 / Env 1 set "
-    "to Outputs, all four carry what is printed. The 6pm pips always show "
-    "the followers, whatever the jacks carry.\n\nThe output envelope is "
-    "taken from the post-mix sum.\n\n- **Default:** Input envelope\n- "
-    "**Pip:** P6 shows the output envelope",
+    "It carries the input follower's envelope, the same signal the "
+    "Routing page offers as TKEO.\n\nSet to CV inputs, it becomes CV 3: a "
+    "bipolar CV input with its own segment on every routing knob.\n\n- "
+    "**Default:** 0 – 5 V input envelope (TKEO)\n- **As input:** CV 3, "
+    "the green routing segment\n- **Pip:** P5 shows the input envelope; "
+    "red on input clip",
+    "**Trig 2** and **Env 2** each carry any of eight signals: input "
+    "triggers (every slice), output triggers, the input envelope, the "
+    "output envelope, the input or output contour, or the input or output "
+    "pulses (web programmer, Options). A contour is the accent line of "
+    "the hits: at each hit it glides, smoothly, to that hit's strength, "
+    "taking as long as the gap since the hit before, and holds until the "
+    "next, so it never dips between hits. The pulses are a Gaussian on "
+    "every hit, as tall as the hit is strong, their width on the Feedback "
+    "and envelope page. By default Trig 2 carries the input contour and "
+    "Env 2 the input pulses. The 6pm pips always show the slices, the "
+    "contour, TKEO and the pulses, whatever the jacks carry.\n\nThe "
+    "output envelope is taken from the post-mix sum.\n\n- **Default:** "
+    "Input pulses\n- **Pip:** P6 shows the output envelope",
     "Right output, after the dry/wet mix.",
 };
 
@@ -343,12 +397,12 @@ inline constexpr const char* kGestureFlip =
     "Hold B2, nudge Pitch or Stretch\n- **Where:** Primary page";
 
 inline constexpr const char* kGestureSnap =
-    "Hold SHIFT and nudge any knob, on any page, and it snaps to its "
-    "factory default: depths to exactly zero. Nudge back the other way "
-    "while still holding and it returns. It's the per-knob factory "
-    "reset.\n\n- **Gesture:** Hold B3 (SHIFT), nudge any knob\n- "
-    "**Where:** Every page\n- **Target:** Factory, or your save point "
-    "(web programmer)";
+    "Hold SHIFT and nudge any knob, on any page but Routing and Depth, "
+    "and it snaps to its factory default. Nudge back the other way while "
+    "still holding and it returns. It's the per-knob factory reset.\n\n- "
+    "**Gesture:** Hold B3 (SHIFT), nudge any knob\n- **Where:** Every "
+    "page but Routing and Depth\n- **Target:** Factory, or your save "
+    "point (web programmer)";
 
 /* Shared paragraphs: the presets panel and the Options fields */
 inline constexpr const char* kHistory =
@@ -367,18 +421,24 @@ inline constexpr const char* kSnapTarget =
     "saved. Save point falls back to factory while nothing is saved.";
 
 inline constexpr const char* kJackMode =
-    "Out of the box, **Trig 1** and **Env 1** are CV inputs, **CV 2** and "
-    "**CV 3**, and every routing knob has two more segments for them, "
-    "purple and green. Set **Trig 1 / Env 1 Jacks** to Outputs (web "
-    "programmer, Options) to use them as printed. Saved with each preset.";
+    "Out of the box all four jacks are outputs. Set **Trig 1 / Env 1 "
+    "Jacks** to CV inputs (web programmer, Options) to turn **Trig 1** "
+    "and **Env 1** into two more CV inputs, **CV 2** and **CV 3**: every "
+    "routing knob then gains two segments for them, purple and green. The "
+    "same option can add the output follower's signals to the routing "
+    "knobs. Saved with each preset.";
 
 inline constexpr const char* kJackOuts =
-    "While Trig 1 and Env 1 are inputs, **Trig 2** and **Env 2** each "
-    "carry any of the four follower signals: input triggers (every "
-    "slice), output triggers, the input envelope or the output envelope "
-    "(web programmer, Options). By default they carry the input triggers "
-    "and the input envelope, so nothing is lost. With Trig 1 / Env 1 set "
-    "to Outputs, all four carry what is printed. The 6pm pips always show "
-    "the followers, whatever the jacks carry.";
+    "**Trig 2** and **Env 2** each carry any of eight signals: input "
+    "triggers (every slice), output triggers, the input envelope, the "
+    "output envelope, the input or output contour, or the input or output "
+    "pulses (web programmer, Options). A contour is the accent line of "
+    "the hits: at each hit it glides, smoothly, to that hit's strength, "
+    "taking as long as the gap since the hit before, and holds until the "
+    "next, so it never dips between hits. The pulses are a Gaussian on "
+    "every hit, as tall as the hit is strong, their width on the Feedback "
+    "and envelope page. By default Trig 2 carries the input contour and "
+    "Env 2 the input pulses. The 6pm pips always show the slices, the "
+    "contour, TKEO and the pulses, whatever the jacks carry.";
 
 } // namespace manual_text

@@ -8,8 +8,11 @@
  *   P2 Stretch    bipolar +-1x; freeze at noon, |u|^2.5 taper each side
  *   P3 Threshold  keep ratio 0..8 over the envelope average (90% = 4, top = mute)
  *   P4 Grain Size 32 .. 4096 keyframes
- *   P5 Quality    analyzer ε 0.08 (crunchy) .. 0.001 (max)
- *   P6 Feedback   0 .. 1.5 — wet → sinc sat → SVF bandpass → back into the recorder
+ *   P5 Quality    analyzer ε 0.08 (crunchy) .. 0.001 (max); its top 3 % plays the input's PCM, unshaped (the
+ *                 keyframes still steer the heads), crossfaded once, over 20 ms, as the knob crosses (its
+ *                 modulation stops short of the boundary)
+ *   P6 Feedback   0 .. 1.5 stored, loop gain x4/3 (noon 1, top 2) — wet → sinc sat → SVF bandpass → the
+ *                 comb → back into the recorder
  *
  * Buttons (panel-final): B1 = PAGE, B2 = SLICE, B3 = PAGE.
  *
@@ -18,18 +21,24 @@
  * B2 flashes OFF on a trigger.
  *
  *   B1  perf (orange) → mod depth (pink)
- *   B3  CV routing (blue) → secondary settings (teal)
+ *   B3  engine settings (teal, the "secondary" page in code) → feedback and envelope settings (indigo, the
+ *       "diffusion" slot in code) → mod routing (blue); engine settings first from boot
  *
  * Pressing the other group's button jumps to that group's remembered page; the
  * next press of the same button advances within the group.
  *
- *   Depth:     pot i = bipolar depth (−1..+1) for pot i's modulation.
- *   Routing:   pot i = 3-zone source selector — input follower (orange, default)
- *              / output follower (blue) / CV IN (white), and CV 2 (purple) /
- *              CV 3 (green) with Trig 1 / Env 1 flipped; zone-granular catch.
- *   Secondary: envelope smoothing, fade time, keyframe drive, drive
- *              character, MIX dry/wet, feedback bandpass — each with its own
- *              pot-catch.
+ *   Depth:     pot i = bipolar depth (−1..+1) for pot i's modulation; B2 held + a nudge zeroes it.
+ *   Routing:   pot i = the source wheel, scaled to the setup (Sources): TKEO (orange, default) / PULS (magenta) /
+ *              CONT (lime) / CV IN (white); with the output follower among the mods its TKEO (blue) / PULS
+ *              (cyan) / CONT (lavender); with Trig 1 / Env 1 as inputs CV 2 (purple) / CV 3 (green).
+ *              Zone-granular catch; each pot stores its source id.
+ *   Engine:    envelope smoothing, fade time, keyframe drive, drive character, MIX dry/wet; P6 free (its
+ *              preset slot holds the feedback bandpass, turned on the feedback and envelope page).
+ *
+ *   Feedback and envelope: P1 the feedback comb (0 = off .. a keyframe period .. the grain, its taps spreading
+ *              as it goes), P2 the feedback bandpass (Engine P6's slot), P3 PULS's width, P4 the hits' fold
+ *              (CONT and PULS), P5 their delay; P6 dark. Not saved but P2: it boots at its defaults, so saves
+ *              keep 1.2.0's preset format.
  *
  * Routing zones and secondary norms both ride the preset store.
  *
@@ -89,6 +98,11 @@
 #include "jack_routing.h"                /* which signal drives which CV jack */
 #include "capicola_manual_text.h"        /* knob names — generated from docs/manual.html */
 #include "audio_engine.h"
+#include "mod_swap.h"
+#ifdef CAPICOLA_BENCH_LOG
+#include "AdaptiveComb.h"                 /* (the boot micro benchmark) */
+#include "Shapers.h"
+#endif
 
 using namespace alchemy;
 
@@ -109,6 +123,7 @@ static constexpr LedPanel::Rgb kCenter = {90, 90, 90};     // bipolar zero
 static constexpr LedPanel::Rgb kWhite  = {255, 255, 255};
 static constexpr LedPanel::Rgb kPink   = {255, 60, 150};   // depth page / positive depth
 static constexpr LedPanel::Rgb kTeal   = {0, 220, 200};    // secondary page
+static constexpr LedPanel::Rgb kIndigo = {120, 70, 255};   // diffusion page
 static constexpr LedPanel::Rgb kGreen  = {20, 255, 40};    // CV 3 — the Env 1 jack as an input
 static constexpr LedPanel::Rgb kCvWhite = {255, 225, 190}; // CV IN — warm, a full-RGB white reads blue
 
@@ -121,11 +136,21 @@ static constexpr LedPanel::Rgb kPageButton[2] = {
 
 static constexpr uint8_t kB3Routing   = 0;
 static constexpr uint8_t kB3Secondary = 1;
+static constexpr uint8_t kB3Diffusion = 2;
 
-static constexpr LedPanel::Rgb kB3PageButton[2] = {
+static constexpr LedPanel::Rgb kB3PageButton[3] = {
     kBlue,             // B3 page 0 — CV routing
     kTeal,             // B3 page 1 — secondary settings
+    kIndigo,           // B3 page 2 — diffusion
 };
+
+/* B3's rotation: secondary → comb (the diffusion slot) → routing → secondary (heavylight, 2026-11-02: routing after
+ * the comb page; the comb page only where the build has it). Indexed by page: routing, secondary, comb. */
+#ifdef CAPICOLA_FB_DIFFUSER
+static constexpr uint8_t kB3Next[3] = {kB3Secondary, kB3Diffusion, kB3Routing};
+#else
+static constexpr uint8_t kB3Next[3] = {kB3Secondary, kB3Routing, kB3Secondary};
+#endif
 
 
 /* Trigger outs. The jack gets a standard Eurorack trigger; the pip is held
@@ -182,6 +207,7 @@ static TrigOut trig2;   // TRIG 2 — kept output-follower transients
 static AlchemyLabV2                 hw;
 static AlchemyLabAudio::AudioEngine engine;
 
+
 /* Trig 1 / Env 1 as CV inputs (CV 2, CV 3), and what Trig 2 / Env 2 carry
  * then (jack_routing.h). Options fields, so they ride presets; OnPoll applies
  * them to the jacks whenever they change, whoever changed them. */
@@ -190,17 +216,22 @@ static jacks::Options jackOpts;
 /* ── Mod routing (replaces CvMatrix) ─────────────────────────────────────
  * Each perf pot picks its modulation source — input follower, output follower,
  * the CV IN jack, and with the jacks flipped, CV 2 and CV 3 — and takes its
- * bipolar depth from the depth view. A CvSource because two of the sources are
- * internal engine signals. */
+ * bipolar depth from the depth view, crossfading on a switch. A CvSource
+ * because two of the sources are internal engine signals. */
 class ModRouter : public CvSource
 {
   public:
-    static constexpr uint8_t kSrcInEnv  = 0;
-    static constexpr uint8_t kSrcOutEnv = 1;
-    static constexpr uint8_t kSrcCv     = 2;   // panel CV IN (cv[1])
-    static constexpr uint8_t kSrcCv2    = 3;   // Trig 1 jack as input (cv[2])
-    static constexpr uint8_t kSrcCv3    = 4;   // Env 1 jack as input (cv[3])
-    static constexpr uint8_t kNumSrc    = 5;
+    /* Source ids, stored per pot in presets: append only (0..4 as 1.2 stored them). */
+    static constexpr uint8_t kSrcInEnv   = 0;   // TKEO: the input follower's envelope
+    static constexpr uint8_t kSrcOutEnv  = 1;   // the output follower's envelope
+    static constexpr uint8_t kSrcCv      = 2;   // panel CV IN (cv[1])
+    static constexpr uint8_t kSrcCv2     = 3;   // Trig 1 jack as input (cv[2])
+    static constexpr uint8_t kSrcCv3     = 4;   // Env 1 jack as input (cv[3])
+    static constexpr uint8_t kSrcInPuls  = 5;   // PULS from the input's hits
+    static constexpr uint8_t kSrcInCont  = 6;   // CONT from the input's hits
+    static constexpr uint8_t kSrcOutPuls = 7;   // PULS from the output follower's hits
+    static constexpr uint8_t kSrcOutCont = 8;   // CONT from the output follower's hits
+    static constexpr uint8_t kNumSrc     = 9;
 
     void SetDepth (uint8_t pot, float d)   { if (pot < NUM_POTS) depth[pot] = d; }
     void SetSource(uint8_t pot, uint8_t s) { if (pot < NUM_POTS) src[pot]   = s; }
@@ -210,15 +241,19 @@ class ModRouter : public CvSource
         return (page == 0 && pot < NUM_POTS) ? delta[pot] : 0.0f;
     }
 
-    void Update(const float* cv, uint32_t) override
+    void Update(const float* cv, uint32_t t_ms) override
     {
-        sig[kSrcInEnv]  = engine.EnvNormIn();         // unipolar 0..1
-        sig[kSrcOutEnv] = engine.EnvNormOut();
+        sig[kSrcInEnv]   = engine.EnvNormIn();      // unipolar 0..1
+        sig[kSrcOutEnv]  = engine.EnvNormOut();
+        sig[kSrcInPuls]  = engine.PulseIn();        // -1..1 (folded strengths go negative)
+        sig[kSrcInCont]  = engine.ContourIn();
+        sig[kSrcOutPuls] = engine.PulseOut();
+        sig[kSrcOutCont] = engine.ContourOut();
         sig[kSrcCv]     = (cv[1] - 0.5f) * 2.0f;      // bipolar ±1
         sig[kSrcCv2]    = jackOpts.cvIn ? (cv[2] - 0.5f) * 2.0f : 0.0f;
         sig[kSrcCv3]    = jackOpts.cvIn ? (cv[3] - 0.5f) * 2.0f : 0.0f;
         for (uint8_t p = 0; p < NUM_POTS; p++)
-            delta[p] = depth[p] * sig[src[p] < kNumSrc ? src[p] : kSrcInEnv];
+            delta[p] = swap[p].Out(src[p] < kNumSrc ? src[p] : kSrcInEnv, depth[p], sig, t_ms);
     }
 
     /* Live value of a source, for the routing rings and the pips. */
@@ -229,6 +264,7 @@ class ModRouter : public CvSource
     float   depth[NUM_POTS] = {};
     uint8_t src  [NUM_POTS] = {};   // defaults to input follower
     float   delta[NUM_POTS] = {};
+    modswap::Swap swap[NUM_POTS];   // a source change crossfades (heavylight, 2026-11-02: the routing page played live)
 };
 
 static ModRouter modRouter;
@@ -419,6 +455,11 @@ VirtualKnob grainSize = VirtualKnob(3, manual_text::kPrimaryName[3])
     .Linear(32.f, 4096.f)
     .Ring(Level(kOrange));
 
+/* Quality's top 3 % (heavylight, 2026-11-02: a detent, crossfaded only as it is crossed, never blended): the heads
+ * read the input's PCM there, unshaped. The knob's map is linear 0.08 .. 0.001: kPcmBelow is ε at the boundary. */
+static constexpr float kPcmTop   = 0.97f;
+static constexpr float kPcmBelow = 0.08f - kPcmTop * (0.08f - 0.001f);
+
 VirtualKnob quality = VirtualKnob(4, manual_text::kPrimaryName[4])
     .Ident("perf.quality")
     /* ε 0.08..0.001. 0.1 was a bit much at the CCW end and 0.03 was not
@@ -479,25 +520,63 @@ VirtualKnob cvDepth6 = VirtualKnob(5, manual_text::kDepthName[5])
  * inside its stored zone. */
 
 static constexpr uint8_t kMaxSrcZones = ModRouter::kNumSrc;
-/* CCW → CW, alternating the most different hues so neighbours never blur
- * through the panel's diffusion. */
-static constexpr LedPanel::Rgb kSrcColors[kMaxSrcZones] = {kOrange, kBlue,
-                                                           kCvWhite, kViolet,
-                                                           kGreen};
-
-/* Three zones, or five with the jacks flipped to inputs. */
-static uint8_t NumZones() { return jackOpts.cvIn ? kMaxSrcZones : 3; }
-
-static int ZoneOf(float v)
+/* The routing wheel scales with the setup (heavylight, 1.3): it shows the sources the current Options make
+ * available, CCW → CW, and stores each pot's source id (ModRouter's, append only), never its place on the wheel,
+ * so a preset means the same source whatever the wheel shows. Always TKEO, PULS, CONT, CV IN; with the output
+ * follower among the mods, its TKEO, PULS and CONT; with Trig 1 / Env 1 as inputs, CV 2 and CV 3. */
+static uint8_t Sources(uint8_t* list)
 {
-    const int n = NumZones();
-    const int z = (int)(v * (float)n);
-    return (z > n - 1) ? n - 1 : (z < 0) ? 0 : z;
+    uint8_t n = 0;
+    list[n++] = ModRouter::kSrcInEnv;
+    list[n++] = ModRouter::kSrcInPuls;
+    list[n++] = ModRouter::kSrcInCont;
+    list[n++] = ModRouter::kSrcCv;
+    if (jackOpts.outFollower) {
+        list[n++] = ModRouter::kSrcOutEnv;
+        list[n++] = ModRouter::kSrcOutPuls;
+        list[n++] = ModRouter::kSrcOutCont;
+    }
+    if (jackOpts.cvIn) {
+        list[n++] = ModRouter::kSrcCv2;
+        list[n++] = ModRouter::kSrcCv3;
+    }
+    return n;
 }
 
-/* A stored CV 2/3 zone falls back to the input follower while the jacks are
- * outputs. The stored zone itself is kept, so flipping back restores it. */
-static uint8_t EffectiveZone(uint8_t z) { return (z < NumZones()) ? z : 0; }
+/* Each source's hue, by id; neighbours on any wheel differ. */
+static constexpr LedPanel::Rgb kSrcColors[kMaxSrcZones] = {
+    kOrange,             // TKEO
+    kBlue,               // TKEO out
+    kCvWhite,            // CV IN
+    kViolet,             // CV 2
+    kGreen,              // CV 3
+    {255, 0, 150},       // PULS (magenta)   (heavylight, 2026-11-02: more contrast round the wheel)
+    {170, 255, 0},       // CONT (lime)
+    {0, 190, 255},       // PULS out (cyan)
+    {150, 120, 255},     // CONT out (lavender)
+};
+
+static uint8_t NumZones() { uint8_t l[kMaxSrcZones]; return Sources(l); }
+
+/* The source a pot's place on the wheel names. */
+static uint8_t SourceAt(float v)
+{
+    uint8_t l[kMaxSrcZones];
+    const int n = Sources(l);
+    int z = (int)(v * (float)n);
+    z = (z > n - 1) ? n - 1 : (z < 0) ? 0 : z;
+    return l[z];
+}
+
+/* A stored source the setup doesn't offer now plays as TKEO; the stored id is kept, so offering it again restores
+ * it. */
+static uint8_t EffectiveZone(uint8_t id)
+{
+    uint8_t l[kMaxSrcZones];
+    const uint8_t n = Sources(l);
+    for (uint8_t i = 0; i < n; i++) if (l[i] == id) return id;
+    return ModRouter::kSrcInEnv;
+}
 
 #ifndef CAPICOLA_BENCH_LOG
 /* Routing field identity and prose — defined in capicola_manual.cpp so every
@@ -538,7 +617,7 @@ class RoutingStore : public Serializable
     uint32_t SchemaHash() const override
     {
         return 0x43563034u ^ (uint32_t)NUM_POTS
-                           ^ ((uint32_t)kMaxSrcZones << 8);
+                           ^ ((uint32_t)5u << 8);   // (1.2's five zones: the same bytes now hold source ids)
     }
 
 #ifndef CAPICOLA_BENCH_LOG
@@ -575,7 +654,7 @@ static bool         routeCaught[NUM_POTS] = {};
 
 /* B3 page group: latched, remembers its page independently of B1. */
 static bool    b3Active = false;
-static uint8_t b3Page   = kB3Routing;
+static uint8_t b3Page   = kB3Secondary;   // (the first B3 press opens the secondary settings)
 
 /* B1 page held frozen while a B3 page is up. */
 static uint8_t underPage = 0;
@@ -583,6 +662,7 @@ static float   underNorm[NUM_POTS] = {};
 
 static inline bool RoutingOpen()   { return b3Active && b3Page == kB3Routing; }
 static inline bool SecondaryOpen() { return b3Active && b3Page == kB3Secondary; }
+static inline bool DiffusionOpen() { return b3Active && b3Page == kB3Diffusion; }
 
 /* The selected zone's brightness follows its source live — an envelope as
  * it is, a CV by |volts| — over a floor that keeps the selection readable, so
@@ -590,28 +670,31 @@ static inline bool SecondaryOpen() { return b3Active && b3Page == kB3Secondary; 
 static void DrawRouteRing(uint8_t pot, uint8_t sel, float level)
 {
     /* Orange gets a higher dim floor: its low G/B channels quantize away and it
-     * reads dimmer than its neighbors at equal scale. */
-    static constexpr float kZoneDim[kMaxSrcZones] = {0.12f, 0.06f, 0.06f, 0.06f, 0.06f};
+     * reads dimmer than its neighbors at equal scale. (By source id.) */
+    static constexpr float kZoneDim[kMaxSrcZones] = {0.06f, 0.03f, 0.03f, 0.03f, 0.03f, 0.03f, 0.03f, 0.03f, 0.03f};   // (heavylight, 2026-11-02: half 1.3's)
     static constexpr float kSelFloor = 0.25f;
-    /* Five zones leave the two end LEDs dark for contrast: 2|2|3|2|2, the
-     * middle one taking the noon LED so the map stays symmetric. */
-    static constexpr uint8_t kOff = 0xFF;
-    static constexpr uint8_t kLed3[13] = {0,0,0,0, 1,1,1,1,1, 2,2,2,2};               // 4|5|4
-    static constexpr uint8_t kLed5[13] = {kOff, 0,0, 1,1, 2,2,2, 3,3, 4,4, kOff};    // 2|2|3|2|2
-    const uint8_t* led = jackOpts.cvIn ? kLed5 : kLed3;
+    /* The arc split evenly among however many sources the wheel shows, in order, exactly as the knob splits its
+     * travel (SourceAt) (heavylight, 2026-11-02: even zones, whatever their number). The 13 LEDs are 13 equal
+     * cells, so every zone gets 13/n of them; an LED a border crosses mixes its two zones by how much of its cell
+     * each covers. (A zone is never narrower than a cell: at most two meet in one.) */
+    uint8_t l[kMaxSrcZones];
+    const int n = Sources(l);
     if (level < 0.0f) level = 0.0f; else if (level > 1.0f) level = 1.0f;
+    auto zone = [&](int z) {
+        const uint8_t id = l[z];
+        const float   k  = (id == sel) ? kSelFloor + (1.0f - kSelFloor) * level : kZoneDim[id];
+        return LedPanel::Scale(kSrcColors[id], k);
+    };
     for (int s = 0; s <= 12; s++)
     {
-        const uint8_t zone = led[s];
-        if (zone == kOff)
-        {
-            hw.leds.SetRingByHour(pot, 7.5f + 0.75f * (float)s, LedPanel::Rgb{0, 0, 0});
-            continue;
-        }
-        const float   k    = (zone == sel) ? kSelFloor + (1.0f - kSelFloor) * level
-                                           : kZoneDim[zone];
-        hw.leds.SetRingByHour(pot, 7.5f + 0.75f * (float)s,
-            hw.leds.ScaleGlobal(LedPanel::Scale(kSrcColors[zone], k)));
+        const float lo = (float)s * (1.0f / 13.0f);
+        const float hi = (float)(s + 1) * (1.0f / 13.0f);
+        int i = (int)(lo * (float)n);
+        if (i > n - 1) i = n - 1;
+        const float edge = (float)(i + 1) / (float)n;   // where zone i ends
+        LedPanel::Rgb c = zone(i);
+        if (i < n - 1 && edge < hi) c = LedPanel::Mix(c, zone(i + 1), (hi - edge) / (hi - lo));
+        hw.leds.SetRingByHour(pot, 7.5f + 0.75f * (float)s, hw.leds.ScaleGlobal(c));
     }
 }
 
@@ -624,6 +707,8 @@ Page depthPage = Page(1).Name("Depth").Color("#ff3c96").Knobs(cvDepth1, cvDepth2
 
 static ControlLoop loop  (hw);
 static Pager       pager (hw.buttons[0], 2, NUM_POTS);   // B1: perf ↔ depth
+
+static inline bool DepthOpen() { return !b3Active && pager.Page() == 1; }
 
 /* Startup settings = preset slot 0: the Pager's stored knob values, routing,
  * secondary and options. BootLoad() at startup; hold B1+B2 kSaveHoldMs to save
@@ -643,7 +728,7 @@ static char DSY_SDRAM_BSS hostRefresh   [64 * 1024];   // a refresh rebuilds int
 void DescribeJacks(hostlink::Host& host, const jacks::Options& o);
 
 hostlink::Host host(presets, "capicola", "Capicola",
-                           "1.2.0", CAPICOLA_GIT_HASH);
+                           "1.3.0-exp", CAPICOLA_GIT_HASH);
 
 /* src/capicola_manual.cpp — attaches the firmware-authored manual (prose,
  * jacks, buttons) to the descriptor. Called before BootLoad() brings USB up. */
@@ -679,26 +764,31 @@ static constexpr float kPageDefaults[2][NUM_POTS] = {
 };
 
 /* ── Secondary settings (B3 page 1) ──────────────────────────────────────
- *   P1  Smoothing  envelope fc  Exp 5e-5..0.125                    default 0.0014
+ *   P1  Smoothing  envelope fc  Exp 5e-5..0.125                    default 0.002 (~48 Hz)
  *   P2  Fade       OLA crossfade  Exp 10..250 ms                   default 20 ms
  *   P3  Drive      keyframe shaper gain   Linear 0.5..4.0         default 1.0
  *   P4  Character  quake ← clean → sinc   Linear 0..1             default 1 (sinc)
  *   P5  Mix        dry/wet      Linear 0..1                        default 1 (wet)
- *   P6  FB band    feedback bandpass fc   Exp 2e-3..0.9           default 0.02
+ *   P6  FB band    feedback bandpass fc   Exp 100 Hz..0.9         default 0.02 (turned on the feedback and envelope page)
  */
 static PotState secState[NUM_POTS];
 
+/* P6 (the feedback bandpass) is shown and turned on the feedback and envelope page (its P2) but still stored here, in the preset
+ * store's slot: dark on this page, applied like the rest. */
 static constexpr bool kSecEnabled[NUM_POTS] = {true, true, true,
-                                               true, true, true};
+                                               true, true, false};
 
 /* Default secondary norms (each engine boot value expressed on its sweep). */
+/* The feedback bandpass's lowest centre: 100 Hz (heavylight, 2026-11-02; 1.2 went down to 48 Hz). */
+static constexpr float kFbBandLo = 100.0f / 24000.0f;
+
 static constexpr float kSecDefault[NUM_POTS] = {
-    0.4259f,   // P1 smoothing → fc 0.0014
+    0.4715f,   // P1 smoothing → fc 0.002
     0.2153f,   // P2 fade      → 960 samples (20 ms)
     0.1429f,   // P3 drive     → 1.0
     1.0f,      // P4 character → full sinc
     1.0f,      // P5 mix       → full wet (classic Capicola)
-    0.3769f,   // P6 fb band   → fc 0.02
+    0.2918f,   // P6 fb band   → fc 0.02
 };
 
 /* Secondary engineering value from a caught norm. */
@@ -711,7 +801,7 @@ static float SecValue(uint8_t pot, float n)
         case 2: return 0.5f + 3.5f * n;                          // drive (Linear)
         case 3: return n;                                       // character (Linear)
         case 4: return n;                                       // mix (Linear)
-        case 5: return 2.0e-3f * std::pow(0.9f / 2.0e-3f, n);   // fb band fc (Exp)
+        case 5: return kFbBandLo * std::pow(0.9f / kFbBandLo, n);   // fb band fc (Exp, 100 Hz up)
         default: return 0.0f;
     }
 }
@@ -729,6 +819,56 @@ static void SecApply(uint8_t pot, float v)
         case 5: engine.SetFeedbackCutoff(v); break;
         default: break;
     }
+}
+
+/* ── Diffusion settings (B3 page 2) ──────────────────────────────────────
+ *   P1  Size       the feedback comb               Linear 0..1      default 0 (off)
+ *                  (0 = off, 1.2's feedback; then one keyframe period, the taps together, .. the grain's
+ *                  length, the taps spread to golden-ratio shares of it)
+ *   P2  FB band    the feedback bandpass's centre  (Secondary P6's: its slot, map and store)
+ *   P3  Width      PULS's width (sigma)            Exp 25 ms .. 1 s  default 50 ms
+ *   P4  Fold       the hits' strengths through a sine folder (CONT and PULS)   Linear 0..1   default 0 (none)
+ *   P5  Delay      CONT and PULS later than their hits                         Linear 0..500 ms  default 0
+ *   P6             dark
+ *   P3..P6         dark, for later
+ * Not in the preset store (a new component would change the preset schema and
+ * strand every save): it boots at these defaults. Values are norms, applied as
+ * they are. */
+static PotState difState[NUM_POTS];
+
+/* PULS's width (feedback and envelope page P3), seconds: 25 ms .. 1 s, exponential (heavylight, 2026-11-02: below a third of the
+ * old 4 ms .. 1 s map was far too fast, so that third is the floor; 50 ms by default). */
+static constexpr float kPulseWidthLo = 0.0252f;
+/* CONT and PULS's delay (feedback and envelope page P5): 0 .. 500 ms, linear (the dt2-keyframer's DLY reach, 0 .. 508 ms). */
+static constexpr float kModDelayMax = 0.5f;
+static constexpr float kPulseWidthHi = 1.0f;
+
+static constexpr bool kDifEnabled[NUM_POTS] = {true, true, true,
+                                               true, true, false};
+
+static constexpr float kDifDefault[NUM_POTS] = {0.0f, 0.2918f, 0.1862f, 0.0f, 0.0f, 0.0f};   // (P2 = kSecDefault[5]; P3 50 ms)
+
+static void DifApply(uint8_t pot, float n)
+{
+    switch (pot)
+    {
+        case 0: engine.SetCombSize(n);   break;
+        case 1: secState[5].stored = n;  break;   // (the Secondary store's slot: pushed, saved and loaded there)
+        case 2: engine.SetPulseWidth(kPulseWidthLo * std::pow(kPulseWidthHi / kPulseWidthLo, n)); break;
+        case 3: engine.SetHitFold(n); break;
+        case 4: engine.SetModDelay(kModDelayMax * n); break;
+        default: break;
+    }
+}
+
+/* The settings page open now (secondary or diffusion): its pot states and
+ * which pots it wires; null on any other page. */
+static PotState* SettingsState(const bool*& enabled)
+{
+    if (SecondaryOpen()) { enabled = kSecEnabled; return secState; }
+    if (DiffusionOpen()) { enabled = kDifEnabled; return difState; }
+    enabled = nullptr;
+    return nullptr;
 }
 
 #ifndef CAPICOLA_BENCH_LOG
@@ -785,9 +925,9 @@ class SecondaryStore : public Serializable
      * live write from the host takes effect on the next frame. */
     bool Describe(hostlink::ComponentWriter& w) const override
     {
-        static const char* const kPage [1] = {"Secondary"};
+        static const char* const kPage [1] = {"Engine settings"};
         static const char* const kColor[1] = {"#00dcc8"};   // kTeal
-        w.Ident("secondary").Kind("settings").Label("Secondary").Grid(1, NUM_POTS);
+        w.Ident("secondary").Kind("settings").Label("Engine settings").Grid(1, NUM_POTS);
         w.PageMeta(kPage, kColor, 1);
         w.Meta("pageHelp", manual_text::kSecondaryPageHelpJson);   // "About this page"
         /* Cross-links: smoothing shapes what threshold sees, drive and
@@ -868,7 +1008,7 @@ class OptionsStore : public Serializable
         return w.Field(kOptSnapId, kOptSnapName, 0, hostlink::FieldType::Enum,
                        0.0f, kOptSnapDisp, 2u, -1, -1, kOptSnapHelp, kSnapSee, 2)
             && w.Field(kOptJacksId, kOptJacksName, 1, hostlink::FieldType::Enum,
-                       jacks::Options{}.cvIn ? 1.0f : 0.0f, kOptJacksDisp, 2u,
+                       jacks::Options{}.cvIn ? 1.0f : 0.0f, kOptJacksDisp, 4u,
                        -1, -1, kOptJacksHelp, kJacksSee, 2)
             && w.Field(kOptTrig2Id, kOptTrig2Name, 2, hostlink::FieldType::Enum,
                        (float)jacks::Options{}.trig2, kOptOutDisp, jacks::kNumSignals,
@@ -994,28 +1134,29 @@ static bool SaveToHistory()
     return presets.Save(0);
 }
 
-/* Secondary ring: a level arc (dim while uncaught) plus a bright catch pip. */
-static void DrawShiftArc(uint8_t pot, float level, bool caught, uint32_t t_ms)
+/* Settings ring: a level arc (dim while uncaught) plus a bright catch pip, in
+ * the page's hue. */
+static void DrawShiftArc(uint8_t pot, float level, bool caught, LedPanel::Rgb hue, uint32_t t_ms)
 {
     FillDesc d;
     d.mode          = FillMode::Edge;
-    d.color         = LedPanel::Scale(kTeal, caught ? 0.9f : 0.4f);
-    d.passive_color = LedPanel::Scale(kTeal, 0.04f);
+    d.color         = LedPanel::Scale(hue, caught ? 0.9f : 0.4f);
+    d.passive_color = LedPanel::Scale(hue, 0.04f);
     DrawFill(hw.leds, pot, 7.5f, 0.75f, 13, level, d, t_ms);
     if (!caught)
         hw.leds.SetRingByHour(pot, 7.5f + 9.0f * level,
-            hw.leds.ScaleGlobal(LedPanel::Mix(kTeal, kWhite, 0.7f)));
+            hw.leds.ScaleGlobal(LedPanel::Mix(hue, kWhite, 0.7f)));
 }
 
-/* Every ring on the secondary page, so it reads the same over either B1 page.
- * Unwired pots sit dark. */
-static void DrawSecondaryRings(uint32_t t_ms)
+/* Every ring on a settings page (secondary or diffusion), so it reads the same
+ * over either B1 page. Unwired pots sit dark. */
+static void DrawSettingsRings(const PotState* st, const bool* enabled, LedPanel::Rgb hue, uint32_t t_ms)
 {
-    const LedPanel::Rgb off = hw.leds.ScaleGlobal(LedPanel::Scale(kTeal, 0.04f));
+    const LedPanel::Rgb off = hw.leds.ScaleGlobal(LedPanel::Scale(hue, 0.04f));
     for (uint8_t p = 0; p < NUM_POTS; p++)
     {
-        if (kSecEnabled[p])
-            DrawShiftArc(p, secState[p].stored, secState[p].caught, t_ms);
+        if (enabled[p])
+            DrawShiftArc(p, st[p].stored, st[p].caught, hue, t_ms);
         else
             for (int s = 0; s <= 12; s++)
                 hw.leds.SetRingByHour(p, 7.5f + 0.75f * (float)s, off);
@@ -1036,6 +1177,8 @@ static bool b2HoldArmed  = false;   // past the window: a hold, not a chord
 static bool b3HoldArmed  = false;
 static bool shiftUsed    = false;   // this B3 hold snapped a knob — the release won't page
 static bool flipHeld = false;   // armed on the Primary page — P1/P2 are direction controls
+static bool depthHeld = false;  // B2 held on the depth page: a nudged knob's depth snaps to zero
+static bool depthZeroed = false; // ... and this hold zeroed one: its release doesn't slice
 
 /* Stored value and snap target of pot p on the visible page: its factory
  * default, or its value in the save point when the option asks for that and
@@ -1054,6 +1197,12 @@ static bool SnapTarget(uint8_t p, float& cur, float& def)
         cur = secState[p].stored;
         def = saved ? savedSec[p] : kSecDefault[p];
         return kSecEnabled[p];
+    }
+    if (DiffusionOpen())   // (not saved: always its factory value; P2 is Secondary P6's)
+    {
+        cur = difState[p].stored;
+        def = (p == 1) ? (saved ? savedSec[5] : kSecDefault[5]) : kDifDefault[p];
+        return kDifEnabled[p];
     }
     const uint8_t pg = pager.Page();
     cur = pager.Stored(pg, p);
@@ -1075,11 +1224,12 @@ static void HoldValue(uint8_t p, float v, const float* ph)
         return;
     }
     const float side = (ph[p] >= v) ? 2.0f * kCatchTolerance : -2.0f * kCatchTolerance;
-    if (SecondaryOpen())
+    const bool* en;
+    if (PotState* st = SettingsState(en))
     {
-        secState[p].stored       = v;
-        secState[p].caught       = false;
-        secState[p].sign_at_lock = (side > 0.0f) ? 1 : -1;
+        st[p].stored       = v;
+        st[p].caught       = false;
+        st[p].sign_at_lock = (side > 0.0f) ? 1 : -1;
         return;
     }
     float away[NUM_POTS];   // the pot, pushed out of proximity on its own side
@@ -1099,11 +1249,311 @@ static void RearmAfterStateChange()
     {
         routeCaught[p] = false;
         if (SecondaryOpen() && kSecEnabled[p]) InitCatch(secState[p], ph[p]);
+        if (DiffusionOpen() && kDifEnabled[p]) InitCatch(difState[p], ph[p]);
         if (b3Active) underNorm[p] = pager.Stored(underPage, p);
     }
 }
 
 /* Knob values → engine, routing zones → mod sources. */
+#ifdef CAPICOLA_BENCH_LOG
+/* ── Profile stream (bench image) ──────────────────────────────────────
+ * One CSV row every kProfileMs over the front USB (a plain serial port: no
+ * HostLink), its header every kProfileHeaderRows rows. tools/profile.py
+ * captures and reports it. Integers only (no float printf):
+ *   loads     in 0.01 % of one block's real time (budget = core cycles a block)
+ *   counts    since the previous row (keyframes, detector peaks/kept, punches,
+ *             stereo follows, leash splices, front/back guard rescues)
+ *   controls  x1000 (grain in keyframes and fade in samples as they are)
+ *   cv        milliunits, 500 ~ 0 V (the bench jack-map probe)
+ * Send "BOOT" to reboot into the bootloader (tools/profile.py flash). */
+static constexpr uint32_t kProfileMs         = 50;
+static constexpr uint32_t kProfileHeaderRows = 20;
+static volatile bool      profileBootReq     = false;
+
+static void OnUsbRx(uint8_t* buf, uint32_t* len)
+{
+    static const char kWord[] = "BOOT";
+    static uint8_t    got     = 0;
+    for (uint32_t i = 0; i < *len; i++)
+    {
+        got = (buf[i] == (uint8_t)kWord[got]) ? (uint8_t)(got + 1)
+            : (buf[i] == (uint8_t)kWord[0]) ? 1 : 0;
+        if (got == 4) { profileBootReq = true; got = 0; }
+    }
+}
+
+/* Boot benchmark: before presets load, the real engine runs a fixed workload
+ * (strikes, a tone and noise, stereo) at fixed settings, timed per stage, so
+ * memory layouts and engine versions compare like for like. The stream repeats
+ * the results as "#bench" rows with each header. */
+struct BenchCase {
+    const char* name;
+    float pitch, stretch, grain, quality;
+    float thresh;   // the detector's keep ratio (100 = muted: no hits, no onset searches)
+    float hits;     // the strikes' level (0: the tone and noise alone)
+    float feedback, diffusion;   // (the comb's cases: feedback up, the feedback and envelope page's P1)
+    bool  pcm;                   // (the top of Quality)
+    AlchemyLabAudio::AudioEngine::Profile pf;
+};
+static BenchCase benchCases[] = {
+    { "unity",        1.00f, 1.0f, 642.0f, 0.001f,   2.0f, 0.7f, 0.0f, 0.0f, false, {} },
+    { "pitch2_st05",  1.94f, 0.5f, 642.0f, 0.001f,   2.0f, 0.7f, 0.0f, 0.0f, false, {} },
+    { "small_coarse", 0.70f, 0.3f, 128.0f, 0.020f,   2.0f, 0.7f, 0.0f, 0.0f, false, {} },
+    { "unity_muted",  1.00f, 1.0f, 642.0f, 0.001f, 100.0f, 0.7f, 0.0f, 0.0f, false, {} },
+    { "tone_only",    1.00f, 1.0f, 642.0f, 0.001f,   2.0f, 0.0f, 0.0f, 0.0f, false, {} },
+    { "fb_nodiff",    1.00f, 1.0f, 642.0f, 0.001f,   2.0f, 0.7f, 0.9f, 0.0f, false, {} },
+    { "fb_comb1",     1.00f, 1.0f, 642.0f, 0.001f,   2.0f, 0.7f, 0.9f, 1.0f, false, {} },
+    { "unity_pcm",    1.00f, 1.0f, 642.0f, 0.001f,   2.0f, 0.7f, 0.0f, 0.0f, true,  {} },
+    { "pitch2_pcm",   1.94f, 0.5f, 642.0f, 0.001f,   2.0f, 0.7f, 0.0f, 0.0f, true,  {} },
+};
+
+/* Micro benchmark (boot): each per-sample component alone, core cycles per
+ * sample x100, on the same synthetic input. "#micro" rows in the stream. */
+struct MicroCase { const char* name; uint32_t cps100; };
+static MicroCase microCases[] = {
+    { "analyzer", 0 }, { "detector", 0 }, { "detector_out", 0 }, { "bspline_full", 0 },
+    { "fb_sinc", 0 }, { "fb_svf", 0 }, { "comb_off", 0 }, { "comb_on", 0 },   // (one channel's feedback chain)
+};
+#ifdef CAPICOLA_FB_DIFFUSER
+static capicola::AdaptiveComb __attribute__((section(".d2_bss"))) microComb;
+#endif
+/* In AXI SRAM, not DTCM: DTCM holds the stack too, and 12 KB more of .bss there left the stack too small for
+ * Shapers::Init's tables (the bench image overflowed it and died at boot, 2026-11-02). */
+static capicola::Shapers __attribute__((section(".axi_bss"))) microShapers;
+static capicola::SparseLine<65536> DSY_SDRAM_BSS microRing;
+static capicola::Analyzer<65536> __attribute__((section(".axi_bss"))) microAn;
+static capicola::Detector         __attribute__((section(".axi_bss"))) microDet;
+static capicola::Detector         __attribute__((section(".axi_bss"))) microDetOut;
+
+static void RunMicroBench()
+{
+    constexpr int N = 48000;
+    static float x[1024];
+    uint32_t rng = 777u;
+    for (int i = 0; i < 1024; i++) {
+        rng = rng * 1664525u + 1013904223u;
+        x[i] = 0.3f * std::sin(6.2831853f * 220.0f * (float)i / 48000.0f)
+             + ((float)(rng >> 9) / 4194304.0f - 1.0f) * 0.01f;
+    }
+    microRing.Init();
+    microAn.Init(microRing, 48000.0f);
+    microAn.SetThreshold(0.001f);
+    microDet.Init(48000.0f);
+    microDet.SetCutoff(0.002f);
+    microDet.SetThreshold(2.0f);
+    microDetOut.Init(48000.0f);
+    microDetOut.SetCutoff(0.002f);
+    capicola::DeluxeLine<float, 8> dl;
+    dl.Init();
+    volatile float sink = 0.0f;
+    uint32_t t0 = capicola_cycles();
+    for (int i = 0; i < N; i++) microAn.Analyze(x[i & 1023]);
+    uint32_t t1 = capicola_cycles();
+    for (int i = 0; i < N; i++) microDet.Analyze(x[i & 1023]);
+    uint32_t t2 = capicola_cycles();
+    for (int i = 0; i < N; i++) microDetOut.Analyze(x[i & 1023]);
+    uint32_t t3 = capicola_cycles();
+    for (int i = 0; i < N; i++) { dl.Write(x[i & 1023]); sink = sink + dl.ReadBSplineFull(2.0f, 1).tkeo; }
+    uint32_t t4 = capicola_cycles();
+    microShapers.Init();
+    capicola::StateVariable svf;
+    svf.Init();
+    svf.SetControls(0.02f, 0.01f);
+    const uint32_t s0 = capicola_cycles();
+    for (int i = 0; i < N; i++) sink = sink + microShapers.ReadSinc(x[i & 1023]);
+    const uint32_t s1 = capicola_cycles();
+    for (int i = 0; i < N; i++) { svf.Tick(x[i & 1023]); sink = sink + svf.GetNormBandpass(); }
+    const uint32_t s2 = capicola_cycles();
+    uint32_t s3 = s2, s4 = s2;
+#ifdef CAPICOLA_FB_DIFFUSER
+    microComb.Init();
+    for (int i = 0; i < N; i++) {
+        if ((i & 63) == 0) { microComb.SetKeyframes(12.0f, 7700.0f); microComb.Block(64); }
+        sink = sink + microComb.Process(x[i & 1023]);
+    }
+    s3 = capicola_cycles();
+    microComb.SetSize(1.0f);
+    for (int i = 0; i < N; i++) {
+        if ((i & 63) == 0) { microComb.SetKeyframes(12.0f, 7700.0f); microComb.Block(64); }
+        sink = sink + microComb.Process(x[i & 1023]);
+    }
+    s4 = capicola_cycles();
+#endif
+    microCases[0].cps100 = (uint32_t)((uint64_t)(t1 - t0) * 100u / N);
+    microCases[1].cps100 = (uint32_t)((uint64_t)(t2 - t1) * 100u / N);
+    microCases[2].cps100 = (uint32_t)((uint64_t)(t3 - t2) * 100u / N);
+    microCases[3].cps100 = (uint32_t)((uint64_t)(t4 - t3) * 100u / N);
+    microCases[4].cps100 = (uint32_t)((uint64_t)(s1 - s0) * 100u / N);
+    microCases[5].cps100 = (uint32_t)((uint64_t)(s2 - s1) * 100u / N);
+    microCases[6].cps100 = (uint32_t)((uint64_t)(s3 - s2) * 100u / N);
+    microCases[7].cps100 = (uint32_t)((uint64_t)(s4 - s3) * 100u / N);
+}
+
+static void RunBootBench()
+{
+    RunMicroBench();
+    using AlchemyLabAudio::AudioEngine;
+    constexpr int kBlocks = 1500;   // 2 s
+    constexpr int kWarmup = 16;     // not timed
+    const int B = (int)AUDIO_BLOCK_SAMPLES;
+    static float il[AUDIO_BLOCK_SAMPLES], ir[AUDIO_BLOCK_SAMPLES];
+    static float ol[AUDIO_BLOCK_SAMPLES], orr[AUDIO_BLOCK_SAMPLES];
+    for (BenchCase& bc : benchCases)
+    {
+        engine.Init();
+        engine.SetSlicePitch(bc.pitch);
+        engine.SetSliceStretch(bc.stretch);
+        engine.SetGrainSize(bc.grain);
+        engine.SetQuality(bc.quality);
+        engine.SetPcm(bc.pcm);
+        engine.SetFade(960.0f);
+        engine.SetTransientThreshold(bc.thresh);
+        engine.SetMix(1.0f);
+        engine.SetFeedback(bc.feedback);
+        engine.SetCombSize(bc.diffusion);
+        uint32_t rng = 12345u;
+        int n = 0;
+        AudioEngine::Profile drop;
+        engine.TakeProfile(drop);
+        for (int b = 0; b < kBlocks; b++)
+        {
+            for (int i = 0; i < B; i++, n++)
+            {
+                rng = rng * 1664525u + 1013904223u;
+                const float noise = ((float)(rng >> 9) / 4194304.0f - 1.0f) * 0.002f;
+                const int   j     = n % 12000;   // a strike every 250 ms
+                const float tj    = (float)j / 48000.0f;
+                const float hit   = bc.hits * std::exp(-tj * 25.0f)
+                                  * std::sin(6.2831853f * 180.0f * tj);
+                const float tone  = 0.15f * std::sin(6.2831853f * 220.0f * (float)n / 48000.0f);
+                il[i] = hit + tone + noise;
+                ir[i] = 0.8f * hit - tone + noise;
+            }
+            engine.ProcessBlock(il, ir, ol, orr, (std::size_t)B);
+            if (b == kWarmup - 1) engine.TakeProfile(drop);   // (the start clears the ring)
+        }
+        engine.TakeProfile(bc.pf);
+    }
+    engine.Init();   // (a clean engine for the real start)
+}
+
+/* One transfer to the host. A CDC transfer of an exact multiple of the 64-byte
+ * packet needs a zero-length packet to end it, which this stack never sends: the
+ * port then stays busy for good (the first session's stream stopped after 3 s).
+ * Such a line gets one more space before its \r\n. */
+static bool ProfileSend(daisy::UsbHandle& usb, char* buf, int n, int cap)
+{
+    if (n <= 0) return false;
+    if (n % 64 == 0 && n + 1 < cap && n >= 2)
+    {
+        buf[n + 1] = buf[n - 1];   // '\n'
+        buf[n]     = buf[n - 2];   // '\r'
+        buf[n - 2] = ' ';
+        n++;
+    }
+    return usb.TransmitExternal((uint8_t*)buf, (size_t)n) == daisy::UsbHandle::Result::OK;
+}
+
+static void ProfileTick(uint32_t t)
+{
+    using AlchemyLabAudio::AudioEngine;
+    static uint32_t last = 0, rows = 0, dropped = 0;
+    static capicola::RecorderStats pl = {}, pr = {};
+    static char row[768];
+    if (profileBootReq)   // (an explicit flash request: the bootloader waits for it)
+        daisy::System::ResetToBootloader(daisy::System::BootloaderMode::DAISY_INFINITE_TIMEOUT);
+    if (t - last < kProfileMs) return;
+    last = t;
+
+    daisy::UsbHandle usb;   // (stateless: the logger's port)
+    if (rows % kProfileHeaderRows == 0)
+    {
+        static char kHeader[] =
+            "t_ms,blocks,budget,dropped,total,total_max,feedback,cap_l,render_l,cap_r,render_r,"
+            "align,post,cap_l_max,render_l_max,cap_r_max,render_r_max,"
+            "kf_l,kf_r,det_l,det_r,kept_l,kept_r,punch_l,punch_r,follow_l,follow_r,"
+            "splice_l,splice_r,front_l,front_r,back_l,back_r,silent_l,silent_r,"
+            "pitch,stretch,thresh,grain,mix,feedback_amt,fade,quality,"
+            "cv0,cv1,cv2,cv3,cv4,cv5,"
+            "nan_fb,nan_out,trips,diffusion,spread,diff_amt,period_l,period_r,nested,pcm\r\n";
+        ProfileSend(usb, kHeader, (int)sizeof(kHeader) - 1, (int)sizeof(kHeader));
+        daisy::System::Delay(2);
+        /* #bench,case,blocks,budget,total,total_max,feedback,cap_l,render_l,cap_r,render_r,
+         *        align,post,cap_l_max,render_l_max,cap_r_max,render_r_max  (0.01 %) */
+        const uint64_t bb = AudioEngine::BlockBudgetCycles();
+        for (const BenchCase& bc : benchCases)
+        {
+            const AudioEngine::Profile& q = bc.pf;
+            const uint64_t nb = q.blocks ? q.blocks : 1;
+            auto a = [&](int k) { return (unsigned)(q.sum[k] * 10000u / (nb * bb)); };
+            auto m = [&](int k) { return (unsigned)((uint64_t)q.max[k] * 10000u / bb); };
+            const int len = std::snprintf(row, sizeof(row),
+                "#bench,%s,%lu,%lu,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u\r\n",
+                bc.name, (unsigned long)q.blocks, (unsigned long)bb,
+                a(AudioEngine::kStTotal), m(AudioEngine::kStTotal), a(AudioEngine::kStFeedback),
+                a(AudioEngine::kStCapL), a(AudioEngine::kStRenderL),
+                a(AudioEngine::kStCapR), a(AudioEngine::kStRenderR),
+                a(AudioEngine::kStAlign), a(AudioEngine::kStPost),
+                m(AudioEngine::kStCapL), m(AudioEngine::kStRenderL),
+                m(AudioEngine::kStCapR), m(AudioEngine::kStRenderR));
+            ProfileSend(usb, row, len, (int)sizeof(row));
+            daisy::System::Delay(2);
+        }
+        for (const MicroCase& mc : microCases)   // #micro,name,cycles_per_sample_x100
+        {
+            const int len = std::snprintf(row, sizeof(row), "#micro,%s,%lu\r\n",
+                                          mc.name, (unsigned long)mc.cps100);
+            ProfileSend(usb, row, len, (int)sizeof(row));
+            daisy::System::Delay(2);
+        }
+    }
+    rows++;
+
+    AudioEngine::Profile pf;
+    engine.TakeProfile(pf);
+    const capicola::RecorderStats l = engine.StatsL(), r = engine.StatsR();
+    const AudioEngine::Controls&  c = engine.GetControls();
+    const uint64_t budget = AudioEngine::BlockBudgetCycles();
+    const uint32_t nb     = pf.blocks ? pf.blocks : 1;
+    auto avg = [&](int k) { return (unsigned)(pf.sum[k] * 10000u / ((uint64_t)nb * budget)); };
+    auto mx  = [&](int k) { return (unsigned)((uint64_t)pf.max[k] * 10000u / budget); };
+    auto k1  = [](float v) { return (int)(v * 1000.0f + (v < 0.0f ? -0.5f : 0.5f)); };
+    const float* cv = loop.Cv();
+    const int n = std::snprintf(row, sizeof(row),
+        "%lu,%lu,%lu,%lu,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,"
+        "%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%d,%d,"
+        "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,"
+        "%lu,%lu,%lu,%d,%d,%d,%d,%d,%lu,%d\r\n",
+        (unsigned long)t, (unsigned long)pf.blocks, (unsigned long)budget, (unsigned long)dropped,
+        avg(AudioEngine::kStTotal), mx(AudioEngine::kStTotal), avg(AudioEngine::kStFeedback),
+        avg(AudioEngine::kStCapL), avg(AudioEngine::kStRenderL),
+        avg(AudioEngine::kStCapR), avg(AudioEngine::kStRenderR),
+        avg(AudioEngine::kStAlign), avg(AudioEngine::kStPost),
+        mx(AudioEngine::kStCapL), mx(AudioEngine::kStRenderL),
+        mx(AudioEngine::kStCapR), mx(AudioEngine::kStRenderR),
+        (unsigned long)(l.keyframes - pl.keyframes), (unsigned long)(r.keyframes - pr.keyframes),
+        (unsigned long)(l.detected - pl.detected), (unsigned long)(r.detected - pr.detected),
+        (unsigned long)(l.kept - pl.kept), (unsigned long)(r.kept - pr.kept),
+        (unsigned long)(l.punches - pl.punches), (unsigned long)(r.punches - pr.punches),
+        (unsigned long)(l.follows - pl.follows), (unsigned long)(r.follows - pr.follows),
+        (unsigned long)(l.splices - pl.splices), (unsigned long)(r.splices - pr.splices),
+        (unsigned long)(l.fronts - pl.fronts), (unsigned long)(r.fronts - pr.fronts),
+        (unsigned long)(l.backs - pl.backs), (unsigned long)(r.backs - pr.backs),
+        (int)l.silent, (int)r.silent,
+        k1(c.pitch), k1(c.stretch), k1(c.thresh), (int)(c.grain + 0.5f), k1(c.mix),
+        k1(c.feedback), (int)(c.fade + 0.5f), k1(c.quality),
+        k1(cv[0]), k1(cv[1]), k1(cv[2]), k1(cv[3]), k1(cv[4]), k1(cv[5]),
+        (unsigned long)pf.nanFb, (unsigned long)pf.nanOut, (unsigned long)pf.trips,
+        k1(c.diffusion), k1(c.spread), k1(engine.DiffAmount()),
+        (int)(engine.DiffPeriod(0) + 0.5f), (int)(engine.DiffPeriod(1) + 0.5f), (unsigned long)pf.nested,
+        engine.PcmOn() ? 1 : 0);
+    pl = l;
+    pr = r;
+    if (n > 0 && !ProfileSend(usb, row, n, (int)sizeof(row)))
+        dropped++;
+}
+#endif
+
 static void OnFrame()
 {
     /* A preset landed since last frame — from the panel, boot or the
@@ -1117,13 +1567,17 @@ static void OnFrame()
     /* B3 view changes: arm the incoming page's catch, re-arm B1's on the way out. */
     {
         static bool    prevActive = false;
-        static uint8_t prevPage   = kB3Routing;
+        static uint8_t prevPage   = kB3Secondary;
         const float*   ph         = loop.Phys();
 
         /* Pager::Update runs before this hook and tracks the caught pot, so the
          * B1 page underneath follows the knob unless we hold it. Snapshot on
          * entry, re-assert every frame; the pot locks out once it moves past
          * kCatchTolerance. */
+        /* The feedback and envelope page's P2 mirrors Secondary P6's stored value (a preset load, the reset, a HostLink write)
+         * while the page is closed; open, its pot writes it back (DifApply). */
+        if (!DiffusionOpen()) difState[1].stored = secState[5].stored;
+
         if (b3Active && !prevActive)
         {
             underPage = pager.Page();
@@ -1140,18 +1594,23 @@ static void OnFrame()
             if (RoutingOpen())
                 for (uint8_t p = 0; p < NUM_POTS; p++)
                     routeCaught[p] = false;
-            else if (SecondaryOpen())
+            else if (SecondaryOpen() || DiffusionOpen())
             {
+                const bool* en;
+                PotState*   st = SettingsState(en);
                 for (uint8_t p = 0; p < NUM_POTS; p++)
-                    if (kSecEnabled[p]) InitCatch(secState[p], ph[p]);
+                    if (en[p]) InitCatch(st[p], ph[p]);
             }
             else
                 pager.LockPage(pager.Page(), ph);
         }
 
-        if (SecondaryOpen())
-            for (uint8_t p = 0; p < NUM_POTS; p++)
-                if (kSecEnabled[p]) UpdateCatch(secState[p], ph[p]);
+        {
+            const bool* en;
+            if (PotState* st = SettingsState(en))
+                for (uint8_t p = 0; p < NUM_POTS; p++)
+                    if (en[p]) UpdateCatch(st[p], ph[p]);
+        }
 
         /* Push every changed secondary, whoever moved it — a caught pot, a
          * preset load, the B1+B3 reset, or a HostLink live write. Gating this
@@ -1160,19 +1619,27 @@ static void OnFrame()
         static float applied[NUM_POTS] = {-1.f, -1.f, -1.f, -1.f, -1.f, -1.f};
         for (uint8_t p = 0; p < NUM_POTS; p++)
         {
-            if (!kSecEnabled[p] || secState[p].stored == applied[p]) continue;
+            if (secState[p].stored == applied[p]) continue;   // (all six: P6 is turned from the feedback and envelope page)
             applied[p] = secState[p].stored;
             SecApply(p, SecValue(p, secState[p].stored));
+        }
+        static float difApplied[NUM_POTS] = {-1.f, -1.f, -1.f, -1.f, -1.f, -1.f};
+        for (uint8_t p = 0; p < NUM_POTS; p++)
+        {
+            if (!kDifEnabled[p] || difState[p].stored == difApplied[p]) continue;
+            difApplied[p] = difState[p].stored;
+            DifApply(p, difState[p].stored);
         }
 
         prevActive = b3Active;
         prevPage   = b3Page;
     }
 
-    /* B3 held is the SHIFT layer on every page, and it is binary: each knob
+    /* B3 held is the SHIFT layer on every page but Routing and Depth (there it
+     * is control all, below), and it is binary: each knob
      * holds still and only toggles between where it was when the hold armed
      * and its snap target (factory, or the save point). A nudge toward the
-     * target snaps there — depths to exactly zero — and a nudge back returns.
+     * target snaps there, and a nudge back returns.
      * All six knobs, P1/P2 included. Same momentum test as the gesture,
      * re-based on each nudge. A knob is only held once its pot has moved, so
      * untouched rings don't dim on every hold. A knob left at its default
@@ -1185,7 +1652,8 @@ static void OnFrame()
         static bool  atDef  [NUM_POTS];
         static bool  touched[NUM_POTS];
         const float* ph = loop.Phys();
-        if (b3HoldArmed)
+        const bool   snap = b3HoldArmed && !RoutingOpen() && !DepthOpen();
+        if (snap)
             for (uint8_t p = 0; p < NUM_POTS; p++)
             {
                 float cur, def;
@@ -1207,7 +1675,64 @@ static void OnFrame()
                 }
                 if (touched[p]) HoldValue(p, atDef[p] ? def : orig[p], ph);
             }
-        prev = b3HoldArmed;
+        prev = snap;
+    }
+
+    /* Control all (heavylight, 2026-11-02, as on the Digitakt): B3 held on Routing or Depth, the first knob you turn
+     * leads and the other five follow, each by the same amount from where it stood (Depth: the same change of depth,
+     * here; Routing: the same number of places on the wheel, in the routing block below), each stopping at its own
+     * end. The leader only moves once caught, its pip as always; the followers stay uncaught after the hold. */
+    {
+        static bool   prev = false;
+        static float  ref [NUM_POTS];   // each depth where it stood when the hold (or its latest leader) began
+        static int8_t lead = -1;
+        const bool   all = b3HoldArmed && DepthOpen();
+        const float* ph  = loop.Phys();
+        if (all && !prev)
+        {
+            lead = -1;
+            for (uint8_t p = 0; p < NUM_POTS; p++) ref[p] = pager.Stored(1, p);
+        }
+        if (all)
+        {
+            for (uint8_t p = 0; p < NUM_POTS; p++)
+                if ((int8_t)p != lead && pager.Caught(p) && std::fabs(pager.Stored(1, p) - ref[p]) >= kGestureNudge)
+                {
+                    for (uint8_t q = 0; q < NUM_POTS; q++)
+                        if (q != p) ref[q] = pager.Stored(1, q);
+                    lead = (int8_t)p;
+                }
+            if (lead >= 0)
+            {
+                const float d = pager.Stored(1, (uint8_t)lead) - ref[lead];
+                for (uint8_t p = 0; p < NUM_POTS; p++)
+                {
+                    if ((int8_t)p == lead) continue;
+                    float v = ref[p] + d;
+                    v = v < 0.0f ? 0.0f : v > 1.0f ? 1.0f : v;
+                    HoldValue(p, v, ph);
+                }
+                shiftUsed = true;
+            }
+        }
+        prev = all;
+    }
+
+    /* B2 held on the depth page (heavylight, 2026-11-02): nudge a knob and its depth snaps to zero, held there
+     * until B2 lets go (then behind its catch pip, as after a snap). A hold that zeroed any doesn't slice. */
+    {
+        static bool  prev = false;
+        static float ref[NUM_POTS];
+        static bool  zeroed[NUM_POTS];
+        const float* ph = loop.Phys();
+        if (depthHeld)
+            for (uint8_t p = 0; p < NUM_POTS; p++)
+            {
+                if (!prev) { ref[p] = ph[p]; zeroed[p] = false; }
+                if (!zeroed[p] && std::fabs(ph[p] - ref[p]) >= kGestureNudge) { zeroed[p] = true; depthZeroed = true; }
+                if (zeroed[p]) HoldValue(p, kPageDefaults[1][p], ph);
+            }
+        prev = depthHeld;
     }
 
     /* Pitch carries the same B2 gesture as Stretch. Value() is the modulated
@@ -1219,8 +1744,8 @@ static void OnFrame()
         engine.SetSlicePitch((eff < 0.5f) ? -pitchG.liveMag : pitchG.liveMag);
     }
 
-    /* Secondary page open: skip the primaries so the two layers don't fight. */
-    if (!SecondaryOpen())
+    /* The primaries reach the engine on every page (heavylight, 2026-11-02: on a settings page their modulation
+     * froze until it closed). The pots don't move them there: the B1 page under a B3 page is held (underNorm). */
     {
         /* P2 carries the same B2 gesture as P1: hold to flip the grid's
          * direction at a constant stretch, release and the knob is page-
@@ -1238,7 +1763,12 @@ static void OnFrame()
                                          : (4.0f + (tn - 0.9f) * 40.0f);
         engine.SetTransientThreshold(tn > 0.99f ? 1.0e9f : ratio);
         engine.SetGrainSize(grainSize.Value());   // keyframes
-        engine.SetQuality  (quality.Value());      // analyzer ε
+        /* The top of Quality (PCM) is the knob's own place, never its modulation's: below it, modulation stops
+         * short of the boundary (ε no finer than kPcmBelow), so it can't push the sound in and out of PCM. */
+        const bool pcmTop = pager.Stored(0, 4) >= kPcmTop;
+        const float eps   = quality.Value();
+        engine.SetQuality  (pcmTop || eps >= kPcmBelow ? eps : kPcmBelow);   // analyzer ε
+        engine.SetPcm      (pcmTop);
         engine.SetFeedback (feedback.Value());     // filtered feedback
     }
 
@@ -1269,37 +1799,54 @@ static void OnFrame()
     if (RoutingOpen())
     {
         const float* ph = loop.Phys();
+        uint8_t l[kMaxSrcZones];
+        const int n = Sources(l);
+        auto place = [&](uint8_t id) { int i = 0; while (i < n - 1 && l[i] != id) i++; return (l[i] == id) ? i : 0; };
+        static bool   prev = false;
+        static int    from[NUM_POTS];   // control all: each knob's place when the hold (or its latest leader) began
+        static int8_t lead = -1;
+        const bool all = b3HoldArmed;
+        if (all && !prev)
+        {
+            lead = -1;
+            for (uint8_t p = 0; p < NUM_POTS; p++) from[p] = place(EffectiveZone(routing.zone[p]));
+        }
         for (uint8_t p = 0; p < NUM_POTS; p++)
         {
-            const uint8_t z = (uint8_t)ZoneOf(ph[p]);
-            if (!routeCaught[p] && z == EffectiveZone(routing.zone[p]) && !b3HoldArmed)
+            const uint8_t z = SourceAt(ph[p]);
+            if (!routeCaught[p] && z == EffectiveZone(routing.zone[p]))
                 routeCaught[p] = true;
-            if (routeCaught[p])
-                routing.zone[p] = z;
+            if (!routeCaught[p]) continue;
+            if (all && (int8_t)p != lead && z != EffectiveZone(routing.zone[p]))
+            {
+                for (uint8_t q = 0; q < NUM_POTS; q++)
+                    if (q != p) from[q] = place(EffectiveZone(routing.zone[q]));
+                from[p] = place(EffectiveZone(routing.zone[p]));
+                lead = (int8_t)p;
+            }
+            routing.zone[p] = z;
         }
+        if (all && lead >= 0)
+        {
+            const int d = place(routing.zone[lead]) - from[lead];
+            for (uint8_t p = 0; p < NUM_POTS; p++)
+            {
+                if ((int8_t)p == lead) continue;
+                int i = from[p] + d;
+                i = i < 0 ? 0 : i > n - 1 ? n - 1 : i;
+                routing.zone[p] = l[i];
+                routeCaught[p]  = false;
+            }
+            shiftUsed = true;
+        }
+        prev = all;
     }
 
     for (uint8_t p = 0; p < NUM_POTS; p++)
         modRouter.SetSource(p, EffectiveZone(routing.zone[p]));
 
 #ifdef CAPICOLA_BENCH_LOG
-    /* ~1 Hz audio-CPU + raw-CV report over USB serial (cv in milliunits, 500 ≈
-     * 0 V — bench probe for the jack map). Bench image only; the deploy image
-     * gives this port to HostLink. */
-    static uint32_t lastCpuLogMs = 0;
-    const uint32_t  t = daisy::System::GetNow();
-    if (t - lastCpuLogMs >= 1000)
-    {
-        lastCpuLogMs = t;
-        const int avg = (int)(engine.CpuAvg() * 1000.0f + 0.5f);
-        const int mx  = (int)(engine.CpuMax() * 1000.0f + 0.5f);
-        const float* cvb = loop.Cv();
-        SerialLog::PrintLine("CPU avg=%d.%d%% max=%d.%d%%  cv %d %d %d %d %d %d",
-                          avg / 10, avg % 10, mx / 10, mx % 10,
-                          (int)(cvb[0] * 1000), (int)(cvb[1] * 1000),
-                          (int)(cvb[2] * 1000), (int)(cvb[3] * 1000),
-                          (int)(cvb[4] * 1000), (int)(cvb[5] * 1000));
-    }
+    ProfileTick(daisy::System::GetNow());
 #endif
 }
 
@@ -1371,6 +1918,7 @@ static void OnPoll(uint32_t t_ms)
                     pager.SetStored(pg, p, kPageDefaults[pg][p], ph);
                 routing.zone[p]    = 0;                // input follower
                 secState[p].stored = kSecDefault[p];
+                difState[p].stored = kDifDefault[p];
             }
             RearmAfterStateChange();
             ConfirmFlash();
@@ -1389,6 +1937,7 @@ static void OnPoll(uint32_t t_ms)
     if (hw.buttons[1].RisingEdge())
     {
         b2Chorded       = b1 || b3;
+        depthZeroed     = false;
         pitchG.nudged   = false;   // cleared here, not on release: OnFrame's
         stretchG.nudged = false;   // decouple still has to read it
     }
@@ -1397,9 +1946,10 @@ static void OnPoll(uint32_t t_ms)
     if (b2 && !b2Chorded && !b2HoldArmed && ++b2HoldMs >= kHoldArmMs)
         b2HoldArmed = true;
     flipHeld = b2HoldArmed && b2 && !b3Active && pager.Page() == 0;
+    depthHeld = b2HoldArmed && b2 && DepthOpen();
     if (hw.buttons[1].FallingEdge())
     {
-        if (!b2Chorded && !pitchG.nudged && !stretchG.nudged)
+        if (!b2Chorded && !pitchG.nudged && !stretchG.nudged && !depthZeroed)
         {
             engine.TriggerSlice();
             trig1.Fire(t_ms);
@@ -1430,8 +1980,9 @@ static void OnPoll(uint32_t t_ms)
     /* B3 rotates its own page group on release: first press opens on the
      * remembered page, each press after that advances. A chorded press is never
      * a page press. Held past kHoldArmMs alone it is the SHIFT layer (snap, in
-     * OnFrame); once armed it stays a hold until release, and a hold that
-     * snapped a knob doesn't page — one that didn't pages like a slow tap. */
+     * OnFrame), or control all on Routing and Depth; once armed it stays a hold
+     * until release, and a hold that moved a knob doesn't page — one that didn't
+     * pages like a slow tap. */
     static uint32_t b3HoldMs = 0;
     if (hw.buttons[2].RisingEdge())
     {
@@ -1446,7 +1997,7 @@ static void OnPoll(uint32_t t_ms)
     {
         if (!b3Chorded && !shiftUsed)
         {
-            if (b3Active) b3Page ^= 1;
+            if (b3Active) b3Page = kB3Next[b3Page];
             else          b3Active = true;
         }
         b3Chorded   = false;
@@ -1503,7 +2054,7 @@ static void OnPoll(uint32_t t_ms)
     {
         static jacks::Options described;   // DescribeManual published the factory roles
         if (jackOpts.cvIn != described.cvIn || jackOpts.trig2 != described.trig2
-            || jackOpts.env2 != described.env2)
+            || jackOpts.env2 != described.env2 || jackOpts.outFollower != described.outFollower)
         {
             described = jackOpts;
             DescribeJacks(host, jackOpts);
@@ -1523,13 +2074,22 @@ static void OnPoll(uint32_t t_ms)
     sig.outTrig = trig2.High(t_ms);
     sig.inEnv   = engine.EnvNormIn();
     sig.outEnv  = engine.EnvNormOut();
+    sig.inCont  = engine.ContourIn();
+    sig.outCont = engine.ContourOut();
+    sig.inPuls  = engine.PulseIn();
+    sig.outPuls = engine.PulseOut();
     const jacks::Plan plan = jacks::Route(jackOpts, sig);
 
     /* Trig 1, Env 1 and Trig 2 sit on the I²C MCP4728 — write only on a real
      * change (a trigger edge is 5 V). Env 2 is the STM32 DAC and streams. */
     CvJack* const out[jacks::kNumJacks] = {&hw.cv_jacks[2], &hw.cv_jacks[3],
                                            &hw.cv_jacks[4], &hw.cv_jacks[5]};
+#ifdef CAPICOLA_NO_OUTS
+    /* The click hunt: the trigger and envelope outputs never written (do their edges reach the audio?) */
+    for (uint8_t j = 0; j < jacks::kNumJacks && false; j++)
+#else
     for (uint8_t j = 0; j < jacks::kNumJacks; j++)
+#endif
     {
         if (!plan.output[j]) continue;
         if (j != jacks::kEnv2 && std::fabs(plan.volts[j] - written[j]) <= 0.02f) continue;
@@ -1541,9 +2101,9 @@ static void OnPoll(uint32_t t_ms)
 /* Always-on layer, drawn last every frame regardless of page:
  *   B1/B2/B3   wear the mode color (blue while the routing view is open);
  *              activity flashes the LED OFF.
- *   P3..P6 6pm the four output jacks (TRIG 1, TRIG 2, ENV 1, ENV 2). The trig
- *              pips run off the same events as the jacks, held kTrigLedMs so a
- *              10 ms pulse is visible. The ENV 1 pip turns red on input clip. */
+ *   P3..P6 6pm the slices, CONT, TKEO and PULS (the factory jacks' signals). The
+ *              slice pip runs off the same events as its jack, held kTrigLedMs so a
+ *              10 ms pulse is visible. The TKEO pip turns red on input clip. */
 static void OnRender(uint32_t t_ms)
 {
     constexpr uint32_t kSliceFlashVisMs = 60;
@@ -1568,9 +2128,12 @@ static void OnRender(uint32_t t_ms)
 
     constexpr LedPanel::Rgb kCvNeg = {255, 10, 0};    // red
 
+    /* The pips (heavylight, 2026-11-02): P3 the slices, P4 the input's contour, P5 TKEO, P6 the input's pulses, as
+     * levels (folded, by magnitude), so the modulators show on every page. */
     const LedPanel::Rgb w = hw.leds.ScaleGlobal(kWhite);
     if (trig1.Lit(t_ms)) hw.leds.SetRingByHour(2, 6.0f, w);
-    if (trig2.Lit(t_ms)) hw.leds.SetRingByHour(3, 6.0f, w);
+    hw.leds.SetRingByHour(3, 6.0f,
+        hw.leds.ScaleGlobal(LedPanel::Scale(kWhite, std::fabs(engine.ContourIn()))));
 
     /* in-env pip: white by envelope, red when the input clips. */
     constexpr float kClipAt = 0.98f;
@@ -1579,12 +2142,14 @@ static void OnRender(uint32_t t_ms)
         : LedPanel::Scale(kWhite, engine.EnvNormIn());
     hw.leds.SetRingByHour(4, 6.0f, hw.leds.ScaleGlobal(inEnv));
     hw.leds.SetRingByHour(5, 6.0f,
-        hw.leds.ScaleGlobal(LedPanel::Scale(kWhite, engine.EnvNormOut())));
+        hw.leds.ScaleGlobal(LedPanel::Scale(kWhite, std::fabs(engine.PulseIn()))));
 
     /* Secondary page: repaint every ring over the B1 page underneath. The 6pm CV
      * pips above are untouched (these arcs span 7:30→4:30, never 6:00). */
     if (SecondaryOpen())
-        DrawSecondaryRings(t_ms);
+        DrawSettingsRings(secState, kSecEnabled, kTeal, t_ms);
+    if (DiffusionOpen())
+        DrawSettingsRings(difState, kDifEnabled, kIndigo, t_ms);
 
     /* Save / load / reset confirm: all three buttons flash bright white three
      * times. Painted last so it overrides the normal button layer. */
@@ -1605,7 +2170,15 @@ static void AudioCallback(daisy::AudioHandle::InputBuffer  in,
                           daisy::AudioHandle::OutputBuffer out,
                           size_t                           size)
 {
+#ifdef CAPICOLA_PROFILE
+    /* The probe: a callback begun while one is still running (re-entered). */
+    static volatile int depth = 0;
+    if (++depth > 1) engine.CountNested();
+#endif
     engine.ProcessBlock(in[0], in[1], out[0], out[1], size);
+#ifdef CAPICOLA_PROFILE
+    depth--;
+#endif
 }
 
 /* ── Main ────────────────────────────────────────────────────────────── */
@@ -1613,6 +2186,9 @@ static void AudioCallback(daisy::AudioHandle::InputBuffer  in,
 int main(void) {
     hw.Init(daisy::SaiHandle::Config::SampleRate::SAI_48KHZ, AUDIO_BLOCK_SAMPLES);
     engine.Init();
+#ifdef CAPICOLA_BENCH_LOG
+    RunBootBench();
+#endif
 
     /* CV IO: left column = inputs (trig top, mod bottom); trigger outs across the
      * top row, envelope outs across the bottom. */
@@ -1635,7 +2211,10 @@ int main(void) {
     /* Secondary bank: park each at its default (= the engine's boot value),
      * caught, so the first visit to the page shows the live setting. */
     for (uint8_t p = 0; p < NUM_POTS; p++)
+    {
         secState[p].stored = kSecDefault[p];
+        difState[p].stored = kDifDefault[p];   // (never loaded: not in the store)
+    }
 
     pager.SetPageColor(0, kOrange);
     pager.SetPageColor(1, kPink);
@@ -1667,11 +2246,15 @@ int main(void) {
 
     /* Loaded secondaries only reach the engine if we push them once. */
     for (uint8_t p = 0; p < NUM_POTS; p++)
-        if (kSecEnabled[p]) SecApply(p, SecValue(p, secState[p].stored));
+        SecApply(p, SecValue(p, secState[p].stored));   // (all six: P6 is turned from the feedback and envelope page)
 
     hw.seed.SetLed(true);
 #ifdef CAPICOLA_BENCH_LOG
-    SerialLog::StartLog(false);
+    SerialLog::StartLog(false);   // (brings the front USB up as a plain serial port)
+    {
+        daisy::UsbHandle usb;
+        usb.SetReceiveCallback(OnUsbRx, daisy::UsbHandle::FS_EXTERNAL);
+    }
 #endif
     hw.StartAudio(AudioCallback);
 

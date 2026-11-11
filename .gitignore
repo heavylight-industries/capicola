@@ -13,3 +13,5 @@ tools/simulator/build/
 build-host
 renders
 docs/figures/
+build-arm-*/
+profiles/

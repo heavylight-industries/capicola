@@ -80,6 +80,7 @@ public:
 
     inline float GetLowpass()  const { return lp; }
     inline float GetBandpass() const { return bp; }
+    inline float GetNormBandpass() const { return 2.0f * r * bp; }   // unity gain at fc
     inline float GetHighpass() const { return hp; }
     inline float GetAllpass()  const { return in - 4.0f * r * bp; }
     inline float GetNotch()    const { return lp - hp; }
