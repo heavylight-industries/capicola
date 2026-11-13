@@ -94,6 +94,7 @@
 #include "alchemy/surface/virtual_knob.h"
 
 #include "hardware.h"
+#include "host_controls.h"
 #include "git_stamp.h"                   /* CAPICOLA_GIT_HASH, per build */
 #include "jack_routing.h"                /* which signal drives which CV jack */
 #include "capicola_manual_text.h"        /* knob names — generated from docs/manual.html */
@@ -589,8 +590,8 @@ extern const char* const kRouteDispJson;
 #endif
 
 /* Raised by every preset apply — boot, the panel's load, and HostLink's
- * load-from-slot and live push alike — so OnFrame can re-arm catch against the
- * new values. Presets has no after-load hook; every apply deserializes the
+ * load-from-slot and full-state live push alike — so OnFrame can re-arm catch
+ * against the new values. Presets has no after-load hook; every apply deserializes the
  * whole managed set, RoutingStore included, so that is where it's raised. */
 static bool stateApplied = false;
 
@@ -2235,6 +2236,39 @@ int main(void) {
 #ifndef CAPICOLA_BENCH_LOG
     host.DescriptorBuffer(hostDescriptor, sizeof(hostDescriptor))
         .DescriptorRefreshBuffer(hostRefresh, sizeof(hostRefresh));
+    // Custom projections edit one field and rearm only its panel pickup.
+    host.Fast(pager, hostlink::FastProjection{
+        0, static_cast<uint16_t>(pager.SerializedSize()), nullptr,
+        [](void*, uint8_t* out, uint16_t) { pager.Serialize(out); },
+        [](void*, uint16_t offset, const uint8_t* data, uint16_t size) {
+            return capicola::host_controls::SetPager(pager, offset, data, size,
+                loop.Phys(), b3Active, underPage, underNorm);
+        }
+    });
+    host.Fast(routing, hostlink::FastProjection{
+        0, static_cast<uint16_t>(routing.SerializedSize()), nullptr,
+        [](void*, uint8_t* out, uint16_t) { routing.Serialize(out); },
+        [](void*, uint16_t offset, const uint8_t* data, uint16_t size) {
+            return capicola::host_controls::SetRouting(routing.zone, routeCaught,
+                kMaxSrcZones, offset, data, size);
+        }
+    });
+    host.Fast(secondary, hostlink::FastProjection{
+        0, static_cast<uint16_t>(secondary.SerializedSize()), nullptr,
+        [](void*, uint8_t* out, uint16_t) { secondary.Serialize(out); },
+        [](void*, uint16_t offset, const uint8_t* data, uint16_t size) {
+            return capicola::host_controls::SetSecondary(secState, difState[1],
+                offset, data, size, loop.Phys());
+        }
+    });
+    host.Fast(options, hostlink::FastProjection{
+        0, static_cast<uint16_t>(options.SerializedSize()), nullptr,
+        [](void*, uint8_t* out, uint16_t) { options.Serialize(out); },
+        [](void*, uint16_t offset, const uint8_t* data, uint16_t size) {
+            return capicola::host_controls::SetOptions(options.snapToSaved,
+                jackOpts, routeCaught, offset, data, size);
+        }
+    });
     DescribeManual(host);
     loop.Use(host);   /* descriptor + USB come up inside BootLoad() */
 #endif
