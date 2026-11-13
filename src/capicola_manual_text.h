@@ -269,11 +269,12 @@ inline constexpr const char* kSlicing =
     "A slice snaps the read heads to the current moment with one "
     "fade-length crossfade, and re-anchors the stretch grid from either "
     "direction.\n\nManual and external slices are always accepted, even "
-    "with auto-slicing muted at the top of P3. Kept detector events are "
-    "at least 150 ms apart, and nothing splices faster than one "
-    "fade.\n\n- **Auto:** Detected transients above P3\n- **Manual:** B2, "
-    "on release\n- **External:** Trig In rising edge\n- **Reports:** Trig "
-    "1 pulse, B2 dark flash";
+    "with auto-slicing muted at the top of P3. Each detector keeps events "
+    "at least 23 ms apart. Automatic splices are also limited by the "
+    "Fade; manual and external slices bypass the detector hold-off.\n\n- "
+    "**Auto:** Detected transients above P3\n- **Manual:** B2, on "
+    "release\n- **External:** Trig In rising edge\n- **Reports:** Trig 1 "
+    "pulse, B2 dark flash";
 
 inline constexpr const char* kReadingPanel =
     "All three buttons wear the visible page's color, so activity reads "
@@ -319,9 +320,9 @@ inline constexpr const char* kJack[10] = {
     "auto-slicing muted at the top of P3. Shares B2's dark flash.\n\n- "
     "**Fires:** Rising edge, ~+2 V\n- **Re-arms:** ~+1 V",
     "It pulses once per slice that actually happens: detected transients, "
-    "B2 presses and Trig In edges alike. It never fires faster than the "
-    "detector's 150 ms hold-off, and a long fade thins it further, "
-    "because the fade is also the retrigger floor.\n\nSet to CV inputs, "
+    "B2 presses and Trig In edges alike. Each detector has a 23 ms "
+    "hold-off; a long fade thins automatic slices further. Manual and "
+    "external slices bypass the detector hold-off.\n\nSet to CV inputs, "
     "it becomes CV 2: a bipolar CV input with its own segment on every "
     "routing knob.\n\n- **Default:** 0 / 5 V, 10 ms pulse on every "
     "slice\n- **As input:** CV 2, the purple routing segment\n- **Pip:** "
@@ -338,8 +339,8 @@ inline constexpr const char* kJack[10] = {
     "Env 2 the input pulses. The 6pm pips always show the slices, the "
     "contour, TKEO and the pulses, whatever the jacks carry.\n\nOutput "
     "triggers are a pulse on each transient the output follower keeps, "
-    "with the same 150 ms hold-off. They never slice anything.\n\n- "
-    "**Default:** Input contour\n- **Pip:** P4 shows output triggers",
+    "with the same 23 ms hold-off. They never slice anything.\n\n- "
+    "**Default:** Input contour\n- **Pip:** P4 shows the input contour",
     "Left output, after the dry/wet mix. There is no dry normalling in "
     "hardware.",
     "Right input.",
@@ -364,30 +365,35 @@ inline constexpr const char* kJack[10] = {
     "Env 2 the input pulses. The 6pm pips always show the slices, the "
     "contour, TKEO and the pulses, whatever the jacks carry.\n\nThe "
     "output envelope is taken from the post-mix sum.\n\n- **Default:** "
-    "Input pulses\n- **Pip:** P6 shows the output envelope",
+    "Input pulses\n- **Pip:** P6 shows the input pulses",
     "Right output, after the dry/wet mix.",
 };
 
 /* Button gestures */
 inline constexpr const char* kGestureReset =
-    "Every page returns to its factory defaults, whichever page you're "
-    "on. Your save is untouched, so B2+B3 brings it back.\n\n- "
-    "**Gesture:** Hold B1 + B3 for 0.5 s\n- **Affects:** All four "
-    "pages\n- **Confirms:** Three white flashes";
+    "Every knob page returns to its factory defaults, whichever page "
+    "you're on. Your save is untouched. B2+B3 restores saved controls; "
+    "Size, Width, Fold and Delay remain at their reset defaults because "
+    "they are not saved.\n\n- **Gesture:** Hold B1 + B3 for 0.5 s\n- "
+    "**Affects:** All five knob pages\n- **Confirms:** Three white "
+    "flashes";
 
 inline constexpr const char* kGestureSave =
-    "Saves all four pages as your save point, which is also what the "
-    "module boots into.\n\n- **Gesture:** Hold B1 + B2 for 0.33 s\n- "
-    "**Writes:** Slot 1, the boot slot\n- **History:** The save it "
-    "replaces joins slots 2–16; the oldest drops off\n- **Confirms:** "
-    "Three white flashes";
+    "Saves Primary, Depth, Routing, Engine settings, Feedback Tone and "
+    "Options as the boot state. Size, Width, Fold and Delay are not "
+    "saved. Three white flashes confirm a successful save; if saving "
+    "fails, there is no confirmation and the previous boot preset is "
+    "kept.\n\n- **Gesture:** Hold B1 + B2 for 0.33 s\n- **Writes:** Slot "
+    "1, the boot slot\n- **History:** The save it replaces joins slots "
+    "2–16; the oldest drops off\n- **Confirms:** Three white flashes";
 
 inline constexpr const char* kGestureLoad =
-    "Brings your save point back on all four pages. Catch pips show on "
-    "any setting that was different. It also undoes a factory reset, "
-    "which never touches the save.\n\n- **Gesture:** Hold B2 + B3 for 0.5 "
-    "s\n- **Reads:** Slot 1; nothing if empty\n- **At power-up:** Slot 1, "
-    "or factory defaults if empty\n- **Confirms:** Three white flashes";
+    "Restores the saved controls. Catch pips show on any setting that was "
+    "different. Size, Width, Fold and Delay stay unchanged: loading "
+    "cannot restore their values from before a factory reset.\n\n- "
+    "**Gesture:** Hold B2 + B3 for 0.5 s\n- **Reads:** Slot 1; nothing if "
+    "empty\n- **At power-up:** Slot 1, or factory defaults if empty\n- "
+    "**Confirms:** Three white flashes";
 
 inline constexpr const char* kGestureFlip =
     "Hold B2 and nudge Pitch or Stretch, and its value flips polarity at "
@@ -412,13 +418,17 @@ inline constexpr const char* kHistory =
     "1**, **Save 2** and so on, so the programmer shows their order; a "
     "name you give a save in the programmer is kept. Recall an older one "
     "from the web programmer: load it onto the module, then save from the "
-    "panel to make it your latest.";
+    "panel to make it your latest. Presets include Primary, Depth, "
+    "Routing, Engine settings, Feedback Tone and Options. Size, Width, "
+    "Fold and Delay are not saved or restored.";
 
 inline constexpr const char* kSnapTarget =
     "**Shift Snap Target** (web programmer, Options) picks where a knob "
     "snaps: **Factory**, or **Save point**, its value in your latest save "
     "(slot 1), so each knob toggles between where you are and where you "
-    "saved. Save point falls back to factory while nothing is saved.";
+    "saved. Save point falls back to factory while nothing is saved. "
+    "Size, Width, Fold and Delay always use their factory targets because "
+    "they are not saved.";
 
 inline constexpr const char* kJackMode =
     "Out of the box all four jacks are outputs. Set **Trig 1 / Env 1 "

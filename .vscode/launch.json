@@ -15,7 +15,6 @@
         "interface/stlink.cfg",
         "target/stm32h7x.cfg"
       ],
-      "gdbPath": "/usr/share/gcc-arm-none-eabi-10-2020-q4-major/bin/arm-none-eabi-gdb",
       "svdFile": "${workspaceFolder}/.vscode/STM32H750x.svd",
       "showDevDebugOutput": "raw",
       "runToEntryPoint": "main",
@@ -51,7 +50,6 @@
         "interface/stlink.cfg",
         "target/stm32h7x.cfg"
       ],
-      "gdbPath": "/usr/share/gcc-arm-none-eabi-10-2020-q4-major/bin/arm-none-eabi-gdb",
       "svdFile": "${workspaceFolder}/.vscode/STM32H750x.svd",
       "showDevDebugOutput": "raw"
     }

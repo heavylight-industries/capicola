@@ -94,7 +94,7 @@ class AudioEngine
      * auto-slice fires only from the input side. The two counters are monotonic
      * EVENT counts, not gates: the panel turns each new count into a fixed-width
      * trigger. Both carry the detector's kMinGapSec hold-off, so consecutive
-     * events on one counter are always >= 150 ms apart. EnvNorm* is the envelope
+     * events on a detector are always >= 23 ms apart. EnvNorm* is the envelope
      * expanded to 0..1 (sqrt of gained value). */
     uint32_t SliceCount() const { return sliceCount; }   // slices the engine actually took
     uint32_t OutEventCount() const { return outDet.Count(); }  // kept output-follower events

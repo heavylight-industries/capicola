@@ -45757,11 +45757,13 @@ save, and slots 2–16 keep the fifteen before it; once they're full, each new s
 replaces the oldest. Panel saves name themselves <strong>Save 1</strong>,
 <strong>Save 2</strong> and so on, so the programmer shows their order; a name you give
 a save in the programmer is kept. Recall an older one from the web programmer: load it
-onto the module, then save from the panel to make it your latest.`;
+onto the module, then save from the panel to make it your latest. Presets include Primary, Depth, Routing,
+Engine settings, Feedback Tone and Options. Size, Width, Fold and Delay are not saved or restored.`;
 const SNAP_TARGET = `<strong>Shift Snap Target</strong> (web programmer, Options) picks where
 a knob snaps: <strong>Factory</strong>, or <strong>Save point</strong>, its value in your latest save (slot 1),
 so each knob toggles between where you are and where you saved. Save point falls back
-to factory while nothing is saved.`;
+to factory while nothing is saved. Size, Width, Fold and Delay always use their factory targets
+because they are not saved.`;
 
 const JACK_MODE = `Out of the box all four jacks are outputs. Set <strong>Trig 1 / Env 1 Jacks</strong>
 to CV inputs (web programmer, Options) to turn <strong>Trig 1</strong> and <strong>Env 1</strong>
@@ -45827,18 +45829,17 @@ const JACKS = [
     facts: [["Default", "0 / 5 V, 10 ms pulse on every slice"],
             ["As input", "CV 2, the purple routing segment"], ["Pip", "P3 shows slice triggers"]],
     body: `<p>It pulses once per slice that actually happens: detected
-      transients, B2 presses and Trig In edges alike. It never fires faster than the
-      detector's 150 ms hold-off, and a long ${L("secondary:1", "fade")} thins it further,
-      because the fade is also the retrigger floor.</p>
+      transients, B2 presses and Trig In edges alike. Each detector has a 23 ms hold-off; a long ${L("secondary:1", "fade")} thins automatic slices
+      further. Manual and external slices bypass the detector hold-off.</p>
       <p>Set to CV inputs, it becomes ${L("routing:", "CV 2")}: a bipolar CV input with its
       own segment on every routing knob.</p>`,
     see: ["perf:2", "secondary:1", "j:3"] },
   { l: "Trig 2", kicker: "Jack · any signal out",
     facts: [["Range", "0 – 5 V, or 0 / 5 V pulses"], ["Default", "Input contour"],
-            ["Pip", "P4 shows output triggers"]],
+            ["Pip", "P4 shows the input contour"]],
     body: `<p>${JACK_OUTS}</p>
       <p>Output triggers are a pulse on each transient the output follower keeps, with the
-      same 150 ms hold-off. They never slice anything.</p>`,
+      same 23 ms hold-off. They never slice anything.</p>`,
     see: ["j:2", "j:8"] },
   { l: "Out L", kicker: "Jack · audio out",
     body: `<p>Left output, after the dry/wet mix. There is no dry normalling in
@@ -45863,7 +45864,7 @@ const JACKS = [
     see: ["routing:0", "secondary:0", "j:8"] },
   { l: "Env 2", kicker: "Jack · any signal out",
     facts: [["Range", "0 – 5 V"], ["Default", "Input pulses"],
-            ["Pip", "P6 shows the output envelope"]],
+            ["Pip", "P6 shows the input pulses"]],
     body: `<p>${JACK_OUTS}</p>
       <p>The output envelope is taken from the post-mix sum.</p>`,
     see: ["routing:0", "j:7"] },
@@ -46092,19 +46093,19 @@ const VIEWS = {
 
   diffusion: {
     name: "Feedback and envelope settings", hue: C.indigo, group: "B3 · page 2 of 3 (experimental)",
-    panel: ["SIZE", "FEEDBACK TONE", "", "", "", ""],
+    panel: ["SIZE", "FEEDBACK TONE", "WIDTH", "FOLD", "DELAY", ""],
     caption: "Feedback and envelope settings · defaults",
     buttons: [C.indigo, C.indigo, C.indigo],
     legend: [[C.indigo, "value"]],
     overview: `<p>An adaptive comb inside the ${L("perf:5", "feedback loop")}, after its
       ${L("diffusion:1", "bandpass")}: the feedback comes back from taps a length L behind it, so it
       repeats every L. L comes from the sound itself, from the keyframes: from one period of what is
-      playing up to the grain's length. Size is not saved: it starts off on every boot. Feedback Tone is
-      saved with the rest. P3 sets the width of the pulse outputs, P4 folds the hits behind the contour
+      playing up to the grain's length. Size, Width, Fold and Delay are not saved: they start at their defaults on
+      every boot and stay unchanged when a preset is loaded. Feedback Tone is saved with the rest. P3 sets the width of the pulse outputs, P4 folds the hits behind the contour
       and pulse outputs, P5 delays them. P6 is unused.</p>`,
     knobs: [
       { l: "Size", ring: sweep(0.0, C.indigo),
-        facts: [["Range", "Off → one period → the grain"], ["Default", "Off"]],
+        facts: [["Range", "Off → one period → the grain"], ["Default", "Off"], ["Saved", "No"]],
         body: `<p>Fully down, the comb is off and the feedback is exactly as it is without one.
           Just above, the comb comes in with L at one period of the material (a pitched comb that
           follows its tone); turning it up stretches L towards the grain's length, set by
@@ -46121,7 +46122,7 @@ const VIEWS = {
           there, so old saves load it as they were.)</p>`,
         see: ["perf:5"] },
       { l: "Width", ring: sweep(0.19, C.indigo),
-        facts: [["Range", "25 ms – 1 s, exponential"], ["Default", "50 ms"]],
+        facts: [["Range", "25 ms – 1 s, exponential"], ["Default", "50 ms"], ["Saved", "No"]],
         body: `<p>The width of the pulses on the pulse outputs: a Gaussian on every hit, as tall as the
           hit is strong. Each input pulse peaks on its hit as you hear it and starts from nothing when the
           hit is detected, a Fade earlier, so its rise is short and its fall is this wide: widen it to
@@ -46129,14 +46130,14 @@ const VIEWS = {
           smoothly. Not saved.</p>`,
         see: ["secondary:1"] },
       { l: "Fold", ring: sweep(0.0, C.indigo),
-        facts: [["Range", "None → four folds"], ["Default", "None"]],
+        facts: [["Range", "None → four folds"], ["Default", "None"], ["Saved", "No"]],
         body: `<p>Folds each hit's strength through a sine before the contour and pulse outputs draw
           it. Turned up, loud hits fold back down and past zero while quieter ones rise, so the accents
           of both reorder together; a negative strength makes the contour go below zero and its pulse
           dip. It works on each hit's strength, never on the signal, so it adds no aliasing.</p>`,
         see: ["diffusion:2"] },
       { l: "Delay", ring: sweep(0.0, C.indigo),
-        facts: [["Range", "0 – 500 ms, linear"], ["Default", "0"]],
+        facts: [["Range", "0 – 500 ms, linear"], ["Default", "0"], ["Saved", "No"]],
         body: `<p>Moves the contour and pulse outputs later than the hits that make them, for
           off-beat and swung modulation. A delayed pulse also knows its hit sooner, so it has room to
           rise as slowly as it falls.</p>`,
@@ -46166,26 +46167,28 @@ const VIEWS = {
       </ul>`,
     items: [
       { id: "reset", l: "Factory Reset", lit: { b: [0, 2] },
-        facts: [["Gesture", "Hold B1 + B3 for 0.5 s"], ["Affects", "All four pages"],
+        facts: [["Gesture", "Hold B1 + B3 for 0.5 s"], ["Affects", "All five knob pages"],
                 ["Confirms", "Three white flashes"]],
-        body: `<p>Every page returns to its factory defaults, whichever page you're on. Your
-          save is untouched, so ${L("gestures:load", "<kbd>B2</kbd>+<kbd>B3</kbd>")} brings it back.</p>`,
+        body: `<p>Every knob page returns to its factory defaults, whichever page you're on. Your
+          save is untouched. ${L("gestures:load", "<kbd>B2</kbd>+<kbd>B3</kbd>")} restores saved controls;
+          Size, Width, Fold and Delay remain at their reset defaults because they are not saved.</p>`,
         see: ["gestures:save", "gestures:load", "gestures:snap"] },
       { id: "save", l: "Save", lit: { b: [0, 1] },
         facts: [["Gesture", "Hold B1 + B2 for 0.33 s"], ["Writes", "Slot 1, the boot slot"],
                 ["History", "The save it replaces joins slots 2–16; the oldest drops off"],
                 ["Confirms", "Three white flashes"]],
-        body: `<p>Saves all four pages as your save point, which is also what the module boots
-          into.</p>
+        body: `<p>Saves Primary, Depth, Routing, Engine settings, Feedback Tone and Options as the
+          boot state. Size, Width, Fold and Delay are not saved. Three white flashes confirm a successful
+          save; if saving fails, there is no confirmation and the previous boot preset is kept.</p>
           <p>${HISTORY}</p>`,
         see: ["gestures:load", "gestures:reset"] },
       { id: "load", l: "Load", lit: { b: [1, 2] },
         facts: [["Gesture", "Hold B2 + B3 for 0.5 s"], ["Reads", "Slot 1; nothing if empty"],
                 ["At power-up", "Slot 1, or factory defaults if empty"],
                 ["Confirms", "Three white flashes"]],
-        body: `<p>Brings your save point back on all four pages. Catch pips show on any setting
-          that was different. It also undoes a ${L("gestures:reset", "factory reset")}, which
-          never touches the save.</p>
+        body: `<p>Restores the saved controls. Catch pips show on any setting that was different.
+          Size, Width, Fold and Delay stay unchanged: loading cannot restore their values from before a
+          ${L("gestures:reset", "factory reset")}.</p>
           <p>Older saves in the history are loaded from the web programmer over USB.</p>`,
         see: ["gestures:save", "gestures:reset"] },
       { id: "pingpong", l: "Polarity Flip", lit: { b: [1], k: [0, 1] },
@@ -46228,8 +46231,8 @@ const VIEWS = {
         body: `<p>A slice snaps the read heads to the current moment with one fade-length
           crossfade, and re-anchors the stretch grid from either direction.</p>
           <p>Manual and external slices are always accepted, even with auto-slicing muted at
-          the top of ${L("perf:2", "P3")}. Kept detector events are at least 150 ms apart, and nothing splices
-          faster than one fade.</p>`,
+          the top of ${L("perf:2", "P3")}. Each detector keeps events at least 23 ms apart. Automatic splices are
+          also limited by the Fade; manual and external slices bypass the detector hold-off.</p>`,
         see: ["perf:2", "b2", "j:1", "j:2", "secondary:1"] },
       { id: "panel", l: "Reading the Panel", lit: { k: [2, 3, 4, 5] },
         facts: [["P3 pip", "Slice triggers"], ["P4 pip", "Contour"],

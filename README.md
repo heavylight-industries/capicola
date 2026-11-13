@@ -48,8 +48,14 @@ That being said, I used AI to assist the creation of the documentation and the l
 
 ## Build
 
-Requires `cmake ≥ 3.21`, `ninja`, `arm-none-eabi-gcc` (builds with 10.2.1;
-the SDK nominally asks for ≥ 12), and `dfu-util` for flashing.
+The SDK submodule is pinned to [v0.13.0](https://github.com/hermetic-modular/alchemy-sdk/releases/tag/v0.13.0).
+HostLink fast reads and targeted edits cover Primary, Depth, Mod Routing,
+Engine settings, and Options. Preset names use the full-state path.
+Size, Width, Fold and Delay are not saved in presets; they reset on
+boot and remain unchanged on preset load. Feedback Tone is saved.
+
+Requires `cmake ≥ 3.21`, `ninja`, `arm-none-eabi-gcc` (verified with 15.2.1),
+and `dfu-util` for flashing.
 
 ```sh
 git submodule update --init --recursive    # first checkout only
@@ -62,6 +68,26 @@ Outputs `build-arm/capicola.{elf,bin,hex}`.
 The `arm-bench` preset builds the same image with a 1 Hz CPU/CV serial log
 on the front USB instead of HostLink (they share the CDC port) into
 `build-arm-bench/`.
+
+The `arm-debug` preset builds `build-arm-debug/capicola.elf` for an ST-Link
+SWD session without the bootloader:
+
+```sh
+cmake --preset arm-debug
+cmake --build --preset arm-debug
+```
+
+VS Code uses the Cortex-Debug extension, OpenOCD and `arm-none-eabi-gdb` on
+`PATH`. Its debug task configures the preset before building. The SRAM image
+initializes clocks and SDRAM itself and does not persist after a power cycle.
+
+Run the DSP and host-control tests with the native compiler:
+
+```sh
+cmake --preset host
+cmake --build --preset host
+ctest --preset host
+```
 
 ## Install a release
 

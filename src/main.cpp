@@ -43,10 +43,10 @@
  * Routing zones and secondary norms both ride the preset store.
  *
  * Each button pair is one state move, confirmed with a triple white flash:
- *   B1+B2 held 0.33 s  save everything as the boot state (QSPI slot 0); the save
+ *   B1+B2 held 0.33 s  save persisted controls as the boot state (QSPI slot 0); the save
  *                      it replaces moves into the history (slots 1..15)
  *   B2+B3 held 0.5 s   load it back (nothing happens if the slot is empty)
- *   B1+B3 held 0.5 s   factory defaults on ALL four pages; the save is untouched
+ *   B1+B3 held 0.5 s   factory defaults on all five knob pages; the save is untouched
  * A chord has to form inside the hold window of B2/B3, or that button is already
  * a hold.
  *
@@ -69,7 +69,7 @@
  *   INR   CV IN   (cv[1])   ENV 1·in-env   (jacks[3])   ENV 2·out-env   (jacks[5])   OUTR
  * TRIG IN = external slice trigger (rising edge, always accepted). CV IN = the
  * single external mod CV (eurorack-bipolar). Trig outs are 10 ms 0/5 V pulses,
- * one per event, never closer than the detector's 150 ms hold-off; envelopes
+ * with a 23 ms detector hold-off for automatic events; envelopes
  * are 0..1 → 0..5 V. Same physical channels as the old CV1..CV6 map — only the
  * roles/names changed.
  *
@@ -94,6 +94,9 @@
 #include "alchemy/surface/virtual_knob.h"
 
 #include "hardware.h"
+#include "host_controls.h"
+#include "control_state.h"
+#include "preset_history.h"
 #include "git_stamp.h"                   /* CAPICOLA_GIT_HASH, per build */
 #include "jack_routing.h"                /* which signal drives which CV jack */
 #include "capicola_manual_text.h"        /* knob names — generated from docs/manual.html */
@@ -164,12 +167,11 @@ static constexpr uint32_t kTrigLedMs   = 60;
  * A pulse is never retriggered while it is high: L and R punch off their own
  * detectors, so one stereo hit can straddle two audio blocks, and the second
  * edge belongs to the pulse already running rather than to a runt second
- * trigger. Consecutive events on one counter are >= 150 ms apart (the
- * detector's hold-off), so nothing musical is lost to that rule. */
+ * trigger. Each detector keeps events at least 23 ms apart. */
 class TrigOut
 {
   public:
-    /* Engine counter, sampled at 1 ms — far faster than the 150 ms hold-off, so
+    /* Engine counter, sampled at 1 ms — far faster than the 23 ms hold-off, so
      * an edge can never be missed between polls. */
     void Follow(uint32_t count, uint32_t t_ms)
     {
@@ -589,8 +591,8 @@ extern const char* const kRouteDispJson;
 #endif
 
 /* Raised by every preset apply — boot, the panel's load, and HostLink's
- * load-from-slot and live push alike — so OnFrame can re-arm catch against the
- * new values. Presets has no after-load hook; every apply deserializes the
+ * load-from-slot and full-state live push alike — so OnFrame can re-arm catch
+ * against the new values. Presets has no after-load hook; every apply deserializes the
  * whole managed set, RoutingStore included, so that is where it's raised. */
 static bool stateApplied = false;
 
@@ -1116,22 +1118,7 @@ static void NameThisSave()
 static bool SaveToHistory()
 {
     static uint8_t DSY_SDRAM_BSS buf[kPresetBlobCapacity];
-    if (presets.InfoFor(0).valid)
-    {
-        uint8_t  dst    = 0;
-        uint32_t oldest = 0xFFFFFFFFu;
-        for (uint8_t i = 1; i < Presets::kNumSlots; i++)
-        {
-            const Presets::SlotInfo h = presets.InfoFor(i);
-            if (!h.valid) { dst = i; break; }        // an empty slot first
-            if (h.seq < oldest) { oldest = h.seq; dst = i; }
-        }
-        uint32_t schema = 0;
-        uint16_t total  = 0;
-        if (presets.ReadSlotBytes(0, 0, buf, sizeof(buf), &schema, &total) >= 0)
-            presets.WriteSlotRaw(dst, schema, buf, total);
-    }
-    return presets.Save(0);
+    return capicola::SaveWithHistory(presets, buf, sizeof(buf));
 }
 
 /* Settings ring: a level arc (dim while uncaught) plus a bright catch pip, in
@@ -1245,11 +1232,11 @@ static void HoldValue(uint8_t p, float v, const float* ph)
 static void RearmAfterStateChange()
 {
     const float* ph = loop.Phys();
+    capicola::RearmSettings(secState, kSecEnabled, difState, kDifEnabled, ph,
+                            SecondaryOpen(), DiffusionOpen());
     for (uint8_t p = 0; p < NUM_POTS; p++)
     {
         routeCaught[p] = false;
-        if (SecondaryOpen() && kSecEnabled[p]) InitCatch(secState[p], ph[p]);
-        if (DiffusionOpen() && kDifEnabled[p]) InitCatch(difState[p], ph[p]);
         if (b3Active) underNorm[p] = pager.Stored(underPage, p);
     }
 }
@@ -1874,7 +1861,7 @@ static void OnPoll(uint32_t t_ms)
     const bool b2 = hw.buttons[1].Pressed();
     const bool b3 = hw.buttons[2].Pressed();
 
-    /* B1+B2 held kSaveHoldMs = save everything (all four pages) as the boot
+    /* B1+B2 held kSaveHoldMs = save persisted controls as the boot
      * state, QSPI slot 0; the save it replaces joins the history. Not while
      * B2 is already a hold. */
     static uint32_t saveHoldMs = 0;
@@ -1883,9 +1870,15 @@ static void OnPoll(uint32_t t_ms)
         pager.ConsumeButton();   // B1 is the pager now — eat its release
         if (++saveHoldMs == kSaveHoldMs)
         {
+            char previousName[PresetName::kCapacity] = {};
+            if (presetName) std::memcpy(previousName, presetName->Get(), sizeof(previousName));
             NameThisSave();
-            SaveToHistory();
-            ConfirmFlash();
+            if (SaveToHistory()) ConfirmFlash();
+            else
+            {
+                if (presetName) presetName->Set(previousName);
+                saveFlashMs = 0;
+            }
         }
     }
     else
@@ -1964,17 +1957,13 @@ static void OnPoll(uint32_t t_ms)
      * with hysteresis: fire above ~+2 V, re-arm below ~+1 V. Shares the B2
      * dark-flash so the panel confirms external hits too. */
     {
-        static bool trigArmed = true;
-        const float trig = (loop.Cv()[0] - 0.5f) * 2.0f;   // bipolar ±1 ≈ ±5 V
-        if (trigArmed && trig > 0.4f)
+        static capicola::TriggerInput trigger;
+        if (trigger.Update(hw.cv[0].Volts()))
         {
-            trigArmed = false;
             engine.TriggerSlice();
             trig1.Fire(t_ms);
             sliceFlashMs = t_ms;
         }
-        else if (!trigArmed && trig < 0.2f)
-            trigArmed = true;
     }
 
     /* B3 rotates its own page group on release: first press opens on the
@@ -2184,6 +2173,12 @@ static void AudioCallback(daisy::AudioHandle::InputBuffer  in,
 /* ── Main ────────────────────────────────────────────────────────────── */
 
 int main(void) {
+#ifdef ALCHEMY_DEBUG_SRAM
+    // SWD launches without a bootloader. Seed::Init must initialize clocks
+    // and SDRAM instead of inferring an old bootloader from backup SRAM.
+    daisy::System::InitBackupSram();
+    daisy::boot_info.version = daisy::System::BootInfo::Version::NONE;
+#endif
     hw.Init(daisy::SaiHandle::Config::SampleRate::SAI_48KHZ, AUDIO_BLOCK_SAMPLES);
     engine.Init();
 #ifdef CAPICOLA_BENCH_LOG
@@ -2235,6 +2230,39 @@ int main(void) {
 #ifndef CAPICOLA_BENCH_LOG
     host.DescriptorBuffer(hostDescriptor, sizeof(hostDescriptor))
         .DescriptorRefreshBuffer(hostRefresh, sizeof(hostRefresh));
+    // Custom projections edit one field and rearm only its panel pickup.
+    host.Fast(pager, hostlink::FastProjection{
+        0, static_cast<uint16_t>(pager.SerializedSize()), nullptr,
+        [](void*, uint8_t* out, uint16_t) { pager.Serialize(out); },
+        [](void*, uint16_t offset, const uint8_t* data, uint16_t size) {
+            return capicola::host_controls::SetPager(pager, offset, data, size,
+                loop.Phys(), b3Active, underPage, underNorm);
+        }
+    });
+    host.Fast(routing, hostlink::FastProjection{
+        0, static_cast<uint16_t>(routing.SerializedSize()), nullptr,
+        [](void*, uint8_t* out, uint16_t) { routing.Serialize(out); },
+        [](void*, uint16_t offset, const uint8_t* data, uint16_t size) {
+            return capicola::host_controls::SetRouting(routing.zone, routeCaught,
+                kMaxSrcZones, offset, data, size);
+        }
+    });
+    host.Fast(secondary, hostlink::FastProjection{
+        0, static_cast<uint16_t>(secondary.SerializedSize()), nullptr,
+        [](void*, uint8_t* out, uint16_t) { secondary.Serialize(out); },
+        [](void*, uint16_t offset, const uint8_t* data, uint16_t size) {
+            return capicola::host_controls::SetSecondary(secState, difState[1],
+                offset, data, size, loop.Phys());
+        }
+    });
+    host.Fast(options, hostlink::FastProjection{
+        0, static_cast<uint16_t>(options.SerializedSize()), nullptr,
+        [](void*, uint8_t* out, uint16_t) { options.Serialize(out); },
+        [](void*, uint16_t offset, const uint8_t* data, uint16_t size) {
+            return capicola::host_controls::SetOptions(options.snapToSaved,
+                jackOpts, routeCaught, offset, data, size);
+        }
+    });
     DescribeManual(host);
     loop.Use(host);   /* descriptor + USB come up inside BootLoad() */
 #endif

@@ -2,7 +2,7 @@
     "configurations": [
         {
             "cStandard": "c11",
-            "compilerPath": "/usr/bin/arm-none-eabi-g++",
+            "compilerPath": "arm-none-eabi-g++",
             "cppStandard": "c++17",
             "defines": [
                 "STM32H750xx",
@@ -23,10 +23,9 @@
                 "${workspaceFolder}/lib/alchemy-sdk/hardware/alchemy-lab/v2/include",
                 "${workspaceFolder}/lib/alchemy-sdk/hardware/include",
                 "${workspaceFolder}/lib/alchemy-sdk/framework/include",
-                "${workspaceFolder}/lib/alchemy-sdk/vendor/libDaisy/src",
-                "/usr/share/gcc-arm-none-eabi-10-2020-q4-major/arm-none-eabi/include/**"
+                "${workspaceFolder}/lib/alchemy-sdk/vendor/libDaisy/src"
             ],
-            "name": "Linux"
+            "name": "ARM"
         }
     ],
     "version": 4

@@ -33,6 +33,7 @@
     {
       "label": "build-debug",
       "type": "shell",
+      "dependsOn": "configure-debug",
       "command": "cmake --build --preset arm-debug",
       "options": { "cwd": "${workspaceFolder}" },
       "problemMatcher": ["$gcc"]

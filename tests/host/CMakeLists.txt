@@ -1,10 +1,9 @@
-# Host-side unit tests for the DSP core (lib/).  Header-only, no hardware:
+# Host-side tests for the DSP core and HostLink control edits; no hardware:
 #
 #   cmake --preset host && cmake --build --preset host
 #   ctest --preset host
 #
-# Same tiny CHECK-macro harness as the SDK's tests/host — one binary, one
-# ctest entry, zero dependencies.
+# The CHECK-macro harness uses no test framework.
 
 add_executable(capicola_tests
     capicola_tests.cpp)
@@ -16,6 +15,19 @@ target_include_directories(capicola_tests PRIVATE
 target_compile_options(capicola_tests PRIVATE -Wall -Wextra)
 
 add_test(NAME capicola COMMAND capicola_tests)
+
+add_executable(host_controls_tests
+    host_controls_tests.cpp
+    "${ALCHEMY_SDK_DIR}/framework/src/surface/pager.cpp")
+target_include_directories(host_controls_tests PRIVATE
+    "${CMAKE_SOURCE_DIR}/src"
+    "${CMAKE_SOURCE_DIR}/src/hal"
+    "${ALCHEMY_SDK_DIR}/stubs"
+    "${ALCHEMY_SDK_DIR}/hardware/alchemy-lab/v2/include"
+    "${ALCHEMY_SDK_DIR}/framework/include"
+    "${ALCHEMY_SDK_DIR}/hardware/include")
+target_compile_options(host_controls_tests PRIVATE -Wall -Wextra -Werror)
+add_test(NAME host_controls COMMAND host_controls_tests)
 
 # Offline A/B renderer (not a test): blend_render <out.wav> [input.wav]
 add_executable(blend_render blend_render.cpp)
