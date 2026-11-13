@@ -3,8 +3,7 @@
 #   cmake --preset host && cmake --build --preset host
 #   ctest --preset host
 #
-# Same tiny CHECK-macro harness as the SDK's tests/host — one binary, one
-# ctest entry, zero dependencies.
+# The CHECK-macro harness uses no test framework.
 
 add_executable(capicola_tests
     capicola_tests.cpp)
@@ -23,6 +22,8 @@ add_executable(host_controls_tests
 target_include_directories(host_controls_tests PRIVATE
     "${CMAKE_SOURCE_DIR}/src"
     "${CMAKE_SOURCE_DIR}/src/hal"
+    "${ALCHEMY_SDK_DIR}/stubs"
+    "${ALCHEMY_SDK_DIR}/hardware/alchemy-lab/v2/include"
     "${ALCHEMY_SDK_DIR}/framework/include"
     "${ALCHEMY_SDK_DIR}/hardware/include")
 target_compile_options(host_controls_tests PRIVATE -Wall -Wextra -Werror)

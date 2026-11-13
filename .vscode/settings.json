@@ -1,5 +1,5 @@
 {
-    "C_Cpp.default.compilerPath": "/usr/local/bin/arm-none-eabi-g++",
+    "C_Cpp.default.compilerPath": "arm-none-eabi-g++",
     "files.associations": {
         "optional": "cpp",
         "ratio": "cpp",

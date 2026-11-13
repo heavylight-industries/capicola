@@ -16,11 +16,22 @@
         },
         {
             "name": "host",
-            "displayName": "Host — DSP core unit tests",
-            "description": "Native build of tests/host against lib/ (no SDK, no board).",
+            "displayName": "Host tests",
+            "description": "Native DSP and control tests.",
             "generator": "Ninja",
             "binaryDir": "${sourceDir}/build-host",
             "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "arm-debug",
+            "displayName": "SRAM debug",
+            "description": "Load through SWD without the bootloader.",
+            "inherits": "arm",
+            "binaryDir": "${sourceDir}/build-arm-debug",
+            "cacheVariables": {
+                "ALCHEMY_DEBUG_SRAM": "ON",
                 "CMAKE_BUILD_TYPE": "Debug"
             }
         },
@@ -37,6 +48,7 @@
     ],
     "buildPresets": [
         { "name": "arm",       "configurePreset": "arm" },
+        { "name": "arm-debug", "configurePreset": "arm-debug" },
         { "name": "arm-bench", "configurePreset": "arm-bench" },
         { "name": "host",      "configurePreset": "host" }
     ],

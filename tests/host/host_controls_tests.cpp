@@ -3,6 +3,9 @@
 #include <limits>
 
 #include "host_controls.h"
+#include "control_state.h"
+#include "preset_history.h"
+#include "alchemy/hw/cv_input.h"
 
 using namespace capicola::host_controls;
 
@@ -172,12 +175,186 @@ static void TestOptions()
     CHECK(snap == 1);
 }
 
+static void TestTriggerInput()
+{
+    // Exercise the real SDK voltage conversion at nominal and calibrated spans.
+    for (bool calibrated : {false, true})
+    {
+        const float vdda = calibrated ? 3.20f : 3.30f;
+        const uint16_t zero = calibrated ? 33500 : 32768;
+        uint16_t raw = zero;
+        alchemy::CvInput input;
+        input.Init(&raw, 1000.0f, true, false, 0.0f);
+        if (calibrated) input.SetCalibration(zero, vdda);
+        capicola::TriggerInput trigger;
+        auto poll = [&](float volts) {
+            raw = static_cast<uint16_t>(zero - volts * 65535.0f * alchemy::kV2CvInGainDesign / vdda + 0.5f);
+            input.Process();
+            return trigger.Update(input.Volts());
+        };
+        CHECK(!poll(0.0f));
+        CHECK(!poll(1.9f));
+        CHECK(poll(2.1f));
+        CHECK(!poll(5.0f));
+        CHECK(!poll(1.1f));
+        CHECK(!poll(3.3f)); // No second edge until rearmed.
+        CHECK(!poll(0.9f));
+        CHECK(poll(3.3f)); // Previously below the mistaken 4 V threshold.
+        CHECK(!poll(3.3f));
+        CHECK(!poll(-2.0f));
+        CHECK(poll(5.0f));
+    }
+    capicola::TriggerInput trigger;
+    CHECK(!trigger.Update(2.0f));
+    CHECK(trigger.Update(2.01f));
+    CHECK(!trigger.Update(1.0f));
+    CHECK(!trigger.Update(2.01f));
+    CHECK(!trigger.Update(0.99f));
+    CHECK(trigger.Update(2.01f));
+}
+
+static void TestPresetPickup()
+{
+    alchemy::PotState secondary[NUM_POTS], feedback[NUM_POTS];
+    const bool enabled[NUM_POTS] = {true, true, true, true, true, false};
+    const float phys[NUM_POTS] = {0.1f, 0.2f, 0.3f, 0.4f, 0.5f, 0.6f};
+    feedback[0].stored = 0.7f; // Unsaved comb size must survive a load.
+    feedback[1].stored = 0.2f;
+    secondary[5].stored = 0.8f; // A newly loaded Feedback Tone.
+    capicola::RearmSettings(secondary, enabled, feedback, enabled, phys, false, true);
+    CHECK(feedback[1].stored == 0.8f);
+    CHECK(!feedback[1].caught);
+    CHECK(secondary[5].stored == 0.8f);
+    CHECK(feedback[0].stored == 0.7f);
+    // The next frame's actual pickup algorithm must hold the loaded value.
+    for (uint8_t p = 0; p < NUM_POTS; ++p)
+        if (enabled[p]) alchemy::UpdateCatch(feedback[p], phys[p]);
+    CHECK(feedback[1].stored == secondary[5].stored);
+    CHECK(feedback[0].stored == 0.7f);
+    alchemy::UpdateCatch(feedback[1], 0.9f);
+    CHECK(feedback[1].caught);
+
+    // Proximity pickup can snap to the pot; both views must agree afterward.
+    secondary[5].stored = 0.202f;
+    capicola::RearmSettings(secondary, enabled, feedback, enabled, phys, false, true);
+    CHECK(feedback[1].caught);
+    CHECK(secondary[5].stored == feedback[1].stored);
+
+    // Loading with Engine settings open only rearms that page's controls.
+    feedback[1].caught = false;
+    secondary[0].stored = 0.9f;
+    secondary[5].stored = 0.6f;
+    capicola::RearmSettings(secondary, enabled, feedback, enabled, phys, true, false);
+    CHECK(feedback[1].stored == 0.6f);
+    CHECK(!secondary[0].caught);
+    CHECK(!feedback[1].caught);
+    alchemy::UpdateCatch(secondary[0], phys[0]);
+    CHECK(secondary[0].stored == 0.9f);
+}
+
+struct HistoryStore
+{
+    static constexpr uint8_t kNumSlots = 16;
+    struct Slot
+    {
+        bool valid = false;
+        uint32_t seq = 0, schema = 0;
+        std::array<uint8_t, 4> bytes{};
+    };
+    Slot slots[kNumSlots];
+    bool failRead = false, failArchive = false, failSave = false;
+    int saves = 0, archives = 0;
+    uint8_t archivedSlot = 0;
+
+    Slot InfoFor(uint8_t slot) const { return slots[slot]; }
+    int32_t ReadSlotBytes(uint8_t slot, uint32_t, uint8_t* out, uint16_t capacity,
+                          uint32_t* schema, uint16_t* total) const
+    {
+        if (failRead) return -1;
+        *schema = slots[slot].schema;
+        *total = slots[slot].bytes.size();
+        const auto count = capacity < *total ? capacity : *total;
+        std::memcpy(out, slots[slot].bytes.data(), count);
+        return count;
+    }
+    bool WriteSlotRaw(uint8_t slot, uint32_t schema, const uint8_t* data, uint16_t size)
+    {
+        ++archives;
+        archivedSlot = slot;
+        if (failArchive || size != slots[slot].bytes.size()) return false;
+        slots[slot] = {true, 100, schema, {}};
+        std::memcpy(slots[slot].bytes.data(), data, size);
+        return true;
+    }
+    bool Save(uint8_t slot)
+    {
+        ++saves;
+        if (failSave) return false;
+        slots[slot] = {true, 101, 456, {5, 6, 7, 8}};
+        return true;
+    }
+};
+
+static void TestSaveHistory()
+{
+    uint8_t scratch[4];
+    HistoryStore store;
+    CHECK(capicola::SaveWithHistory(store, scratch, sizeof(scratch)));
+    CHECK(store.saves == 1 && store.archives == 0);
+
+    auto populated = [] {
+        HistoryStore result;
+        result.slots[0] = {true, 5, 123, {1, 2, 3, 4}};
+        return result;
+    };
+    store = populated();
+    const auto previous = store.slots[0];
+    CHECK(capicola::SaveWithHistory(store, scratch, sizeof(scratch)));
+    CHECK(store.archivedSlot == 1);
+    CHECK(store.slots[1].bytes == previous.bytes);
+    CHECK(store.slots[1].schema == previous.schema);
+    CHECK(store.slots[0].bytes != previous.bytes);
+
+    // Never overwrite the boot state when reading or archiving it failed.
+    store = populated();
+    store.failRead = true;
+    CHECK(!capicola::SaveWithHistory(store, scratch, sizeof(scratch)));
+    CHECK(store.saves == 0 && store.archives == 0);
+    CHECK(store.slots[0].bytes == previous.bytes);
+    store = populated();
+    CHECK(!capicola::SaveWithHistory(store, scratch, 2)); // Truncated read.
+    CHECK(store.saves == 0 && store.archives == 0);
+    store = populated();
+    store.failArchive = true;
+    CHECK(!capicola::SaveWithHistory(store, scratch, sizeof(scratch)));
+    CHECK(store.saves == 0 && store.archives == 1);
+    CHECK(store.slots[0].bytes == previous.bytes);
+    store = populated();
+    store.failSave = true;
+    CHECK(!capicola::SaveWithHistory(store, scratch, sizeof(scratch)));
+    CHECK(store.slots[0].bytes == previous.bytes);
+    CHECK(store.slots[1].bytes == previous.bytes);
+
+    // A full history replaces its oldest entry, never its boot slot.
+    store = populated();
+    for (uint8_t slot = 1; slot < store.kNumSlots; ++slot)
+        store.slots[slot] = {true, static_cast<uint32_t>(10 + slot), 789, {}};
+    store.slots[7].seq = 1;
+    CHECK(capicola::SaveWithHistory(store, scratch, sizeof(scratch)));
+    CHECK(store.archivedSlot == 7);
+    CHECK(store.slots[7].bytes == previous.bytes);
+    CHECK(store.slots[6].schema == 789);
+}
+
 int main()
 {
     TestPager();
     TestRouting();
     TestSecondary();
     TestOptions();
+    TestTriggerInput();
+    TestPresetPickup();
+    TestSaveHistory();
     std::printf("%d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;
 }

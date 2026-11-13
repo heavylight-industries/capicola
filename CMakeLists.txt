@@ -44,6 +44,8 @@ option(ALCHEMY_DEBUG_SRAM
 if(NOT ALCHEMY_DEBUG_SRAM)
     add_compile_options(-O2)
     add_compile_definitions(NDEBUG)
+else()
+    add_compile_options(-Og -g3)
 endif()
 
 # ── libDaisy ────────────────────────────────────────────────────────────────
@@ -56,13 +58,6 @@ add_subdirectory("${ALCHEMY_SDK_DIR}/vendor/libDaisy"
 if(NOT ALCHEMY_DEBUG_SRAM)
     target_compile_definitions(daisy PUBLIC BOOT_APP)
 elseif(TARGET CMSIS_DEVICE_H7)
-    # No bootloader set up the chip for the SRAM image, but libDaisy's
-    # DaisySeed::Init() uses boot_version heuristics (read from unstable backup
-    # SRAM) that otherwise SKIP System::ConfigureClocks() (-> PLL3 off, ADC
-    # calibration hangs in hw.Init()) and/or sdram_handle.Init() (-> imprecise
-    # bus fault / HardFault on the first SDRAM-buffer write). Force the full
-    # bring-up. (daisy_seed.cpp is compiled into the `daisy` target.)
-    target_compile_definitions(daisy PUBLIC DAISY_FORCE_FULL_INIT)
     # The SRAM image runs WITHOUT the bootloader, so its own Reset_Handler ->
     # SystemInit() runs (BOOT_APP omitted above).  By default libDaisy's
     # SystemInit sets SCB->VTOR = FLASH_BANK1_BASE (the bootloader's table), so
@@ -110,16 +105,17 @@ if(ALCHEMY_DEBUG_SRAM)
     # resets into internal flash), which is exactly what we want for a debug
     # session.  Build with `cmake --preset arm-debug`.
     set(_alchemy_sram_lds
-        "${ALCHEMY_SDK_DIR}/cmake/linkers/alchemy_stm32h750ib_sram.lds")
+        "${CMAKE_SOURCE_DIR}/cmake/linkers/capicola_sram.lds")
     add_executable(capicola ${ALCHEMY_FW_SOURCES})
     set_target_properties(capicola PROPERTIES
         SUFFIX ".elf"
         LINK_DEPENDS "${_alchemy_sram_lds}")
     target_link_libraries(capicola PRIVATE
         daisy alchemy::board_alchemy_lab_v2 alchemy::surface alchemy::host_link)
-    target_compile_options(capicola PRIVATE -Og -g3)
+    target_compile_definitions(capicola PRIVATE ALCHEMY_DEBUG_SRAM)
     target_link_options(capicola PRIVATE
         LINKER:-T,${_alchemy_sram_lds}
+        LINKER:--print-memory-usage
         LINKER:--gc-sections
         LINKER:-Map=capicola.map)
 
