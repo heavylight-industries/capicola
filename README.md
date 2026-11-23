@@ -74,6 +74,10 @@ it while powering on), and flash it over the front USB-C:
 dfu-util -a 0 -s 0x90040000:leave -D capicola.bin -d ,0483:df11
 ```
 
+> **Power the module separately.** The front USB-C jack does not supply power
+> for an update. Run the module from its own supply (Eurorack bus power) while
+> flashing; USB alone will not power it.
+
 `dfu-util` is packaged for every major platform (`apt install dfu-util`,
 `brew install dfu-util`). Everything below is for building from source instead.
 
@@ -81,6 +85,9 @@ dfu-util -a 0 -s 0x90040000:leave -D capicola.bin -d ,0483:df11
 
 Put the module in update mode (hold **B3** through the ~2 s boot window, or
 hold while powering on), then:
+
+> The front USB-C jack does not power the module. Supply your own power (Eurorack
+> bus) for the duration of the update.
 
 ```sh
 cmake --build --preset arm --target capicola-flash
